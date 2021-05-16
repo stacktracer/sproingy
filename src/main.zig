@@ -182,15 +182,6 @@ pub fn main( ) !u8 {
 
     var running = true;
     while ( running ) {
-        var ev: c.SDL_Event = undefined;
-        while ( c.SDL_PollEvent( &ev ) != 0 ) {
-            print( "Event: {}\n", .{ ev.type } );
-            switch ( ev.type ) {
-                c.SDL_QUIT => running = false,
-                else => {}
-            }
-        }
-
         var wDrawable: c_int = undefined;
         var hDrawable: c_int = undefined;
         c.SDL_GL_GetDrawableSize( window, &wDrawable, &hDrawable );
@@ -211,6 +202,31 @@ pub fn main( ) !u8 {
 
         c.SDL_GL_SwapWindow( window );
         c.SDL_Delay( 1 );
+
+        while ( true ) {
+            var ev: c.SDL_Event = undefined;
+            if ( c.SDL_PollEvent( &ev ) == 0 ) {
+                break;
+            }
+            else {
+                switch ( ev.type ) {
+                    c.SDL_QUIT => running = false,
+                    c.SDL_KEYDOWN => {
+                        const keysym = ev.key.keysym;
+                        switch ( keysym.sym ) {
+                            c.SDLK_ESCAPE => running = false,
+                            c.SDLK_w => {
+                                if ( @intCast( c_int, keysym.mod ) & c.KMOD_CTRL != 0 ) {
+                                    running = false;
+                                }
+                            },
+                            else => {}
+                        }
+                    },
+                    else => {}
+                }
+            }
+        }
     }
 
     return 0;
