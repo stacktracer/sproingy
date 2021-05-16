@@ -2,6 +2,7 @@ const std = @import( "std" );
 const print = std.debug.print;
 const warn = std.debug.warn;
 const panic = std.debug.panic;
+const cAllocator = std.heap.c_allocator;
 const c = @import( "c.zig" );
 
 
@@ -29,7 +30,13 @@ pub fn createProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) !c.
     var linkStatus: c.GLint = 0;
     c.glGetProgramiv( program, c.GL_LINK_STATUS, &linkStatus );
     if ( linkStatus != c.GL_TRUE ) {
-        // TODO: Include ProgramInfoLog string
+        var messageSize: c.GLint = undefined;
+        c.glGetProgramiv( program, c.GL_INFO_LOG_LENGTH, &messageSize );
+        const message = try cAllocator.alloc( u8, @intCast( usize, messageSize ) );
+        defer cAllocator.free( message );
+        c.glGetProgramInfoLog( program, messageSize, null, message.ptr );
+        warn( "Shader linking failed:\n{s}\n", .{ message } );
+        // TODO: Make message available to caller
         return GLError.GenericFailure;
     }
 
@@ -44,7 +51,13 @@ pub fn compileShaderSource( shaderType: c.GLenum, source: [*:0]const u8 ) !c.GLu
     var compileStatus: c.GLint = 0;
     c.glGetShaderiv( shader, c.GL_COMPILE_STATUS, &compileStatus );
     if ( compileStatus != c.GL_TRUE ) {
-        // TODO: Include ShaderInfoLog string
+        var messageSize: c.GLint = undefined;
+        c.glGetShaderiv( shader, c.GL_INFO_LOG_LENGTH, &messageSize );
+        const message = try cAllocator.alloc( u8, @intCast( usize, messageSize ) );
+        defer cAllocator.free( message );
+        c.glGetShaderInfoLog( shader, messageSize, null, message.ptr );
+        warn( "Shader compilation failed:\n{s}\n", .{ message } );
+        // TODO: Make message available to caller
         return GLError.GenericFailure;
     }
 
