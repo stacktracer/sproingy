@@ -154,7 +154,7 @@ pub fn main( ) !u8 {
     try setGLAttr( c.SDL_GL_CONTEXT_MINOR_VERSION, 2 );
     try setGLAttr( c.SDL_GL_CONTEXT_PROFILE_MASK, c.SDL_GL_CONTEXT_PROFILE_CORE );
 
-    const window = try createWindow( "Dummy", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 800, 800, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_SHOWN );
+    const window = try createWindow( "Dummy", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 800, 800, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_SHOWN );
     defer c.SDL_DestroyWindow( window );
 
     const context = c.SDL_GL_CreateContext( window );
@@ -190,6 +190,11 @@ pub fn main( ) !u8 {
                 else => {}
             }
         }
+
+        var wDrawable: c_int = undefined;
+        var hDrawable: c_int = undefined;
+        c.SDL_GL_GetDrawableSize( window, &wDrawable, &hDrawable );
+        c.glViewport( 0, 0, wDrawable, hDrawable );
 
         c.glClearColor( 0.0, 0.0, 0.0, 1.0 );
         c.glClear( c.GL_COLOR_BUFFER_BIT );
