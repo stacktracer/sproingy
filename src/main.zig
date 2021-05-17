@@ -206,7 +206,7 @@ pub fn main( ) !u8 {
     try setGLAttr( c.SDL_GL_CONTEXT_MINOR_VERSION, 2 );
     try setGLAttr( c.SDL_GL_CONTEXT_PROFILE_MASK, c.SDL_GL_CONTEXT_PROFILE_CORE );
 
-    const window = try createWindow( "Dummy", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 800, 800, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_SHOWN );
+    const window = try createWindow( "Dummy", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 800, 600, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_SHOWN );
     defer c.SDL_DestroyWindow( window );
 
     const context = c.SDL_GL_CreateContext( window );
@@ -283,6 +283,25 @@ pub fn main( ) !u8 {
                             },
                             else => {}
                         }
+                    },
+                    c.SDL_MOUSEMOTION => {
+                        // TODO: Check ev.motion.windowID
+                        // TODO: Check ev.motion.which
+                        // TODO: Adjust coords for HiDPI
+                        const xFrac = ( @intToFloat( f64, ev.motion.x ) + 0.5 ) / @intToFloat( f64, wDrawable );
+                        const yFrac = 1.0 - ( ( @intToFloat( f64, ev.motion.y ) + 0.5 ) / @intToFloat( f64, hDrawable ) );
+                        // FIXME
+                        print( "MOUSE: {} {} {} {}\n", .{ ev.motion.x, ev.motion.y, xFrac, yFrac } );
+                    },
+                    c.SDL_MOUSEWHEEL => {
+                        // TODO: Check ev.wheel.windowID
+                        // TODO: Check ev.wheel.which
+                        var zoomSteps = ev.wheel.y;
+                        if ( ev.wheel.direction == c.SDL_MOUSEWHEEL_FLIPPED ) {
+                            zoomSteps = -zoomSteps;
+                        }
+                        // FIXME
+                        print( "ZOOM: {}\n", .{ zoomSteps } );
                     },
                     else => {}
                 }
