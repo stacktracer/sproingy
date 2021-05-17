@@ -1,5 +1,6 @@
 const std = @import( "std" );
 const pow = std.math.pow;
+const nan = std.math.nan;
 const print = std.debug.print;
 const g = @import( "gl.zig" );
 const s = @import( "sdl2.zig" );
@@ -20,6 +21,11 @@ const Interval1 = struct {
         };
     }
 
+    fn set( self: *Interval1, min: f64, span: f64 ) void {
+        self.min = min;
+        self.span = span;
+    }
+
     fn valueToFrac( self: *const Interval1, v: f64 ) f64 {
         return ( ( v - self.min ) / self.span );
     }
@@ -36,41 +42,121 @@ fn glUniformInterval2( location: g.GLint, x: Interval1, y: Interval1 ) void {
 
 // TODO: Move to a utilities file
 const Axis1 = struct {
-    // TODO: Any way to make tieFrac const?
-    tieFrac: f64 = 0.5,
-    tieCoord: f64 = 0.0,
-    scale: f64 = 1000,
+    viewport_PX: Interval1,
 
-    fn createWithMinMax( span_PX: f64, min: f64, max: f64 ) Axis1 {
-        var axis = Axis1 {};
-        axis.setBounds( span_PX, Interval1.createWithMinMax( min, max ) );
+    // TODO: Any way to make tieFrac const?
+    tieFrac: f64,
+    tieCoord: f64,
+    scale: f64,
+
+    fn createWithMinMax( min: f64, max: f64 ) Axis1 {
+        var axis = Axis1 {
+            .viewport_PX = Interval1.createWithMinMax( 0, 1000 ),
+            .tieFrac = 0.5,
+            .tieCoord = 0.0,
+            .scale = 1000,
+        };
+        axis.setBounds( Interval1.createWithMinMax( min, max ) );
         return axis;
     }
 
-    fn pan( self: *Axis1, span_PX: f64, frac: f64, coord: f64 ) void {
+    fn pan( self: *Axis1, frac: f64, coord: f64 ) void {
         const scale = self.scale;
-        self.set( span_PX, frac, coord, scale );
+        self.set( frac, coord, scale );
     }
 
-    fn set( self: *Axis1, span_PX: f64, frac: f64, coord: f64, scale: f64 ) void {
+    fn set( self: *Axis1, frac: f64, coord: f64, scale: f64 ) void {
         // TODO: Apply constraints
-        const span = span_PX / scale;
+        const span = self.viewport_PX.span / scale;
         self.tieCoord = coord + ( self.tieFrac - frac )*span;
         self.scale = scale;
     }
 
-    fn setBounds( self: *Axis1, span_PX: f64, bounds: Interval1 ) void {
+    fn setBounds( self: *Axis1, bounds: Interval1 ) void {
         // TODO: Apply constraints
         self.tieCoord = bounds.fracToValue( self.tieFrac );
-        self.scale = span_PX / bounds.span;
+        self.scale = self.viewport_PX.span / bounds.span;
     }
 
-    fn getBounds( self: *const Axis1, span_PX: f64 ) Interval1 {
-        const span = span_PX / self.scale;
+    fn getBounds( self: *const Axis1 ) Interval1 {
+        const span = self.viewport_PX.span / self.scale;
         const min = self.tieCoord - self.tieFrac*span;
         return Interval1 {
             .min = min,
             .span = span,
+        };
+    }
+};
+
+
+
+const Dragger = struct {
+    const Self = @This( );
+
+    handlePressImpl: fn ( self: *Self, xFrac: f64, yFrac: f64 ) void,
+    handleDragImpl: fn ( self: *Self, xFrac: f64, yFrac: f64 ) void,
+    handleReleaseImpl: fn ( self: *Self, xFrac: f64, yFrac: f64 ) void,
+
+    fn handlePress( self: *Self, xFrac: f64, yFrac: f64 ) void {
+        self.handlePressImpl( self, xFrac, yFrac );
+    }
+
+    fn handleDrag( self: *Self, xFrac: f64, yFrac: f64 ) void {
+        self.handleDragImpl( self, xFrac, yFrac );
+    }
+
+    fn handleRelease( self: *Self, xFrac: f64, yFrac: f64 ) void {
+        self.handleReleaseImpl( self, xFrac, yFrac );
+    }
+};
+
+const AxisPanner2 = struct {
+    const Self = @This( );
+
+    // FIXME: Can this be renamed?
+    dragger: Dragger,
+
+    xAxis: *Axis1,
+    yAxis: *Axis1,
+
+    xGrabFrac: f64,
+    yGrabFrac: f64,
+    xGrabCoord: f64,
+    yGrabCoord: f64,
+
+    fn handlePress( dragger: *Dragger, xFrac: f64, yFrac: f64 ) void {
+        const self = @fieldParentPtr( Self, "dragger", dragger );
+        self.xGrabFrac = xFrac;
+        self.yGrabFrac = yFrac;
+        self.xGrabCoord = self.xAxis.getBounds( ).fracToValue( xFrac );
+        self.yGrabCoord = self.yAxis.getBounds( ).fracToValue( yFrac );
+    }
+
+    fn handleDrag( dragger: *Dragger, xFrac: f64, yFrac: f64 ) void {
+        const self = @fieldParentPtr( Self, "dragger", dragger );
+        self.xAxis.pan( xFrac, self.xGrabCoord );
+        self.yAxis.pan( yFrac, self.yGrabCoord );
+    }
+
+    fn handleRelease( dragger: *Dragger, xFrac: f64, yFrac: f64 ) void {
+        const self = @fieldParentPtr( Self, "dragger", dragger );
+        self.xAxis.pan( xFrac, self.xGrabCoord );
+        self.yAxis.pan( yFrac, self.yGrabCoord );
+    }
+
+    fn init( xAxis: *Axis1, yAxis: *Axis1 ) Self {
+        return Self {
+            .xAxis = xAxis,
+            .yAxis = yAxis,
+            .xGrabFrac = nan( f64 ),
+            .yGrabFrac = nan( f64 ),
+            .xGrabCoord = nan( f64 ),
+            .yGrabCoord = nan( f64 ),
+            .dragger = Dragger {
+                .handlePressImpl = handlePress,
+                .handleDragImpl = handleDrag,
+                .handleReleaseImpl = handleRelease,
+            },
         };
     }
 };
@@ -186,14 +272,15 @@ pub fn main( ) !u8 {
     // Application state
     //
 
-    var wWindow_PX: c_int = undefined;
-    var hWindow_PX: c_int = undefined;
-    s.SDL_GL_GetDrawableSize( window, &wWindow_PX, &hWindow_PX );
-    var xAxis = Axis1.createWithMinMax( @intToFloat( f64, wWindow_PX ), -1, 1 );
-    var yAxis = Axis1.createWithMinMax( @intToFloat( f64, hWindow_PX ), -1, 1 );
+    var xAxis = Axis1.createWithMinMax( -1, 1 );
+    var yAxis = Axis1.createWithMinMax( -1, 1 );
 
     var xMouseFrac: f64 = 0.5;
     var yMouseFrac: f64 = 0.5;
+
+    // TODO: Awkward to store axis ptrs in AxisPanner2
+    var axisPanner = AxisPanner2.init( &xAxis, &yAxis );
+    var dragger: ?*Dragger = null;
 
 
     // GL setup
@@ -222,15 +309,14 @@ pub fn main( ) !u8 {
 
     var running = true;
     while ( running ) {
-        var wDrawable_PX: c_int = undefined;
-        var hDrawable_PX: c_int = undefined;
+        var wDrawable_PX: c_int = 0;
+        var hDrawable_PX: c_int = 0;
         s.SDL_GL_GetDrawableSize( window, &wDrawable_PX, &hDrawable_PX );
         g.glViewport( 0, 0, wDrawable_PX, hDrawable_PX );
-        var wViewport_PX = @intToFloat( f64, wDrawable_PX );
-        var hViewport_PX = @intToFloat( f64, hDrawable_PX );
-
-        const xBounds = xAxis.getBounds( wViewport_PX );
-        const yBounds = yAxis.getBounds( hViewport_PX );
+        xAxis.viewport_PX.set( 0, @intToFloat( f64, wDrawable_PX ) );
+        yAxis.viewport_PX.set( 0, @intToFloat( f64, hDrawable_PX ) );
+        const xBounds = xAxis.getBounds( );
+        const yBounds = yAxis.getBounds( );
 
         g.glClearColor( 0.0, 0.0, 0.0, 1.0 );
         g.glClear( g.GL_COLOR_BUFFER_BIT );
@@ -277,23 +363,30 @@ pub fn main( ) !u8 {
                             else => {}
                         }
                     },
-                    s.SDL_MOUSEMOTION => {
-                        // TODO: Check ev.motion.windowID
-                        // TODO: Check ev.motion.which
-                        // TODO: Adjust coords for HiDPI
-                        xMouseFrac = ( @intToFloat( f64, ev.motion.x ) + 0.5 ) / wViewport_PX;
-                        yMouseFrac = 1.0 - ( ( @intToFloat( f64, ev.motion.y ) + 0.5 ) / hViewport_PX );
-                    },
                     s.SDL_MOUSEBUTTONDOWN => {
                         // TODO: Check ev.motion.windowID
                         // TODO: Check ev.motion.which
                         switch ( ev.button.button ) {
                             s.SDL_BUTTON_LEFT => {
                                 s.setMouseConfinedToWindow( window, true );
-                                // FIXME
-                                print( "DOWN: {} {}\n", .{ ev.button.x, ev.button.y } );
+                                if ( dragger == null ) {
+                                    dragger = &axisPanner.dragger;
+                                    xMouseFrac = xAxis.viewport_PX.valueToFrac( @intToFloat( f64, ev.motion.x ) + 0.5 );
+                                    yMouseFrac = 1.0 - yAxis.viewport_PX.valueToFrac( @intToFloat( f64, ev.motion.y ) + 0.5 );
+                                    dragger.?.handlePress( xMouseFrac, yMouseFrac );
+                                }
                             },
                             else => {}
+                        }
+                    },
+                    s.SDL_MOUSEMOTION => {
+                        // TODO: Check ev.motion.windowID
+                        // TODO: Check ev.motion.which
+                        // TODO: Adjust coords for HiDPI
+                        xMouseFrac = xAxis.viewport_PX.valueToFrac( @intToFloat( f64, ev.motion.x ) + 0.5 );
+                        yMouseFrac = 1.0 - yAxis.viewport_PX.valueToFrac( @intToFloat( f64, ev.motion.y ) + 0.5 );
+                        if ( dragger != null ) {
+                            dragger.?.handleDrag( xMouseFrac, yMouseFrac );
                         }
                     },
                     s.SDL_MOUSEBUTTONUP => {
@@ -302,8 +395,10 @@ pub fn main( ) !u8 {
                         switch ( ev.button.button ) {
                             s.SDL_BUTTON_LEFT => {
                                 s.setMouseConfinedToWindow( window, false );
-                                // FIXME
-                                print( "UP: {} {}\n", .{ ev.button.x, ev.button.y } );
+                                if ( dragger != null ) {
+                                    dragger.?.handleRelease( xMouseFrac, yMouseFrac );
+                                    dragger = null;
+                                }
                             },
                             else => {}
                         }
@@ -320,8 +415,8 @@ pub fn main( ) !u8 {
                         const yFrac = yMouseFrac;
                         const xCoord = xBounds.fracToValue( xFrac );
                         const yCoord = yBounds.fracToValue( yFrac );
-                        xAxis.set( wViewport_PX, xFrac, xCoord, xAxis.scale*zoomFactor );
-                        yAxis.set( hViewport_PX, yFrac, yCoord, yAxis.scale*zoomFactor );
+                        xAxis.set( xFrac, xCoord, xAxis.scale*zoomFactor );
+                        yAxis.set( yFrac, yCoord, yAxis.scale*zoomFactor );
                     },
                     else => {}
                 }
