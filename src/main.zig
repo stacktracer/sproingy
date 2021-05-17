@@ -67,18 +67,42 @@ pub fn compileShaderSource( shaderType: c.GLenum, source: [*:0]const u8 ) !c.GLu
 
 const DummyProgram = struct {
     program: c.GLuint,
+
+    XY_BOUNDS: c.GLint,
     RGBA: c.GLint,
-    inXy: c.GLuint
+
+    /// x_XAXIS, y_YAXIS
+    inCoords: c.GLuint
 };
 
 fn createDummyProgram( ) !DummyProgram {
     const vertSource =
         \\#version 150 core
         \\
-        \\in vec2 inXy;
+        \\vec2 min2D( vec4 interval2D )
+        \\{
+        \\    return interval2D.xy;
+        \\}
+        \\
+        \\vec2 span2D( vec4 interval2D )
+        \\{
+        \\    return interval2D.zw;
+        \\}
+        \\
+        \\vec2 coordsToNdc2D( vec2 coords, vec4 bounds )
+        \\{
+        \\    vec2 frac = ( coords - min2D( bounds ) ) / span2D( bounds );
+        \\    return ( -1.0 + 2.0*frac );
+        \\}
+        \\
+        \\uniform vec4 XY_BOUNDS;
+        \\
+        \\// x_XAXIS, y_YAXIS
+        \\in vec2 inCoords;
         \\
         \\void main(void) {
-        \\    gl_Position = vec4( inXy, 0.0, 1.0 );
+        \\    vec2 xy_XYAXIS = inCoords.xy;
+        \\    gl_Position = vec4( coordsToNdc2D( xy_XYAXIS, XY_BOUNDS ), 0.0, 1.0 );
         \\}
     ;
 
@@ -97,8 +121,9 @@ fn createDummyProgram( ) !DummyProgram {
     const dProgram = try createProgram( vertSource, fragSource );
     return DummyProgram {
         .program = dProgram,
+        .XY_BOUNDS = c.glGetUniformLocation( dProgram, "XY_BOUNDS" ),
         .RGBA = c.glGetUniformLocation( dProgram, "RGBA" ),
-        .inXy = @intCast( c.GLuint, c.glGetAttribLocation( dProgram, "inXy" ) ),
+        .inCoords = @intCast( c.GLuint, c.glGetAttribLocation( dProgram, "inCoords" ) ),
     };
 }
 
@@ -192,10 +217,11 @@ pub fn main( ) !u8 {
 
         c.glUseProgram( dProgram.program );
 
+        c.glUniform4f( dProgram.XY_BOUNDS, -1.0, -1.0, 2.0, 2.0 );
         c.glUniform4f( dProgram.RGBA, 1.0, 0.0, 0.0, 1.0 );
         c.glBindBuffer( c.GL_ARRAY_BUFFER, dVertexCoords );
-        c.glEnableVertexAttribArray( dProgram.inXy );
-        c.glVertexAttribPointer( dProgram.inXy, 2, c.GL_FLOAT, c.GL_FALSE, 0, null );
+        c.glEnableVertexAttribArray( dProgram.inCoords );
+        c.glVertexAttribPointer( dProgram.inCoords, 2, c.GL_FLOAT, c.GL_FALSE, 0, null );
         c.glDrawArrays( c.GL_TRIANGLES, 0, 3 );
 
         c.glUseProgram( 0 );
