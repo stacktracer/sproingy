@@ -96,12 +96,7 @@ pub fn main( ) !u8 {
     try s.setGLAttr( s.SDL_GL_CONTEXT_MINOR_VERSION, 2 );
     try s.setGLAttr( s.SDL_GL_CONTEXT_PROFILE_MASK, s.SDL_GL_CONTEXT_PROFILE_CORE );
 
-    const window = try s.createWindow( "Dummy",
-                                       s.SDL_WINDOWPOS_CENTERED,
-                                       s.SDL_WINDOWPOS_CENTERED,
-                                       800,
-                                       600,
-                                       s.SDL_WINDOW_OPENGL | s.SDL_WINDOW_RESIZABLE | s.SDL_WINDOW_SHOWN );
+    const window = try s.createWindow( "Dummy", s.SDL_WINDOWPOS_UNDEFINED, s.SDL_WINDOWPOS_UNDEFINED, 800, 600, s.SDL_WINDOW_OPENGL | s.SDL_WINDOW_RESIZABLE | s.SDL_WINDOW_SHOWN );
     defer s.SDL_DestroyWindow( window );
 
     const context = s.SDL_GL_CreateContext( window );
@@ -187,6 +182,30 @@ pub fn main( ) !u8 {
                         const yFrac = 1.0 - ( ( @intToFloat( f64, ev.motion.y ) + 0.5 ) / @intToFloat( f64, hDrawable ) );
                         // FIXME
                         print( "MOUSE: {} {} {} {}\n", .{ ev.motion.x, ev.motion.y, xFrac, yFrac } );
+                    },
+                    s.SDL_MOUSEBUTTONDOWN => {
+                        // TODO: Check ev.motion.windowID
+                        // TODO: Check ev.motion.which
+                        switch ( ev.button.button ) {
+                            s.SDL_BUTTON_LEFT => {
+                                s.setMouseConfinedToWindow( window, true );
+                                // FIXME
+                                print( "DOWN: {} {}\n", .{ ev.button.x, ev.button.y } );
+                            },
+                            else => {}
+                        }
+                    },
+                    s.SDL_MOUSEBUTTONUP => {
+                        // TODO: Check ev.motion.windowID
+                        // TODO: Check ev.motion.which
+                        switch ( ev.button.button ) {
+                            s.SDL_BUTTON_LEFT => {
+                                s.setMouseConfinedToWindow( window, false );
+                                // FIXME
+                                print( "UP: {} {}\n", .{ ev.button.x, ev.button.y } );
+                            },
+                            else => {}
+                        }
                     },
                     s.SDL_MOUSEWHEEL => {
                         // TODO: Check ev.wheel.windowID

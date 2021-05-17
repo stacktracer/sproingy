@@ -37,3 +37,11 @@ pub fn makeGLCurrent( window: *SDL_Window, context: SDL_GLContext ) !void {
 pub fn setGLSwapInterval( interval: c_int ) !void {
     return checkStatus( SDL_GL_SetSwapInterval( interval ) );
 }
+
+pub fn setMouseConfinedToWindow( window: *SDL_Window, confined: bool ) void {
+    SDL_SetWindowGrab( window, fromBool( confined ) );
+}
+
+pub fn fromBool( b: bool ) SDL_bool {
+    return @intToEnum( SDL_bool, if ( b ) SDL_TRUE else SDL_FALSE );
+}
