@@ -1,7 +1,80 @@
 const std = @import( "std" );
+const pow = std.math.pow;
 const print = std.debug.print;
 const g = @import( "gl.zig" );
 const s = @import( "sdl2.zig" );
+
+
+// TODO: Move to a utilities file
+const Interval1 = struct {
+    /// Inclusive lower bound.
+    min: f64,
+
+    /// Difference between min and exclusive upper bound.
+    span: f64,
+
+    fn createWithMinMax( min: f64, max: f64 ) Interval1 {
+        return Interval1 {
+            .min = min,
+            .span = max - min
+        };
+    }
+
+    fn valueToFrac( self: *const Interval1, v: f64 ) f64 {
+        return ( ( v - self.min ) / self.span );
+    }
+
+    fn fracToValue( self: *const Interval1, frac: f64 ) f64 {
+        return ( self.min + frac*self.span );
+    }
+};
+
+// TODO: Move to a utilities file
+fn glUniformInterval2( location: g.GLint, x: Interval1, y: Interval1 ) void {
+    g.glUniform4f( location, @floatCast( f32, x.min ), @floatCast( f32, y.min ), @floatCast( f32, x.span ), @floatCast( f32, y.span ) );
+}
+
+// TODO: Move to a utilities file
+const Axis1 = struct {
+    // TODO: Any way to make tieFrac const?
+    tieFrac: f64 = 0.5,
+    tieCoord: f64 = 0.0,
+    scale: f64 = 1000,
+
+    fn createWithMinMax( span_PX: f64, min: f64, max: f64 ) Axis1 {
+        var axis = Axis1 {};
+        axis.setBounds( span_PX, Interval1.createWithMinMax( min, max ) );
+        return axis;
+    }
+
+    fn pan( self: *Axis1, span_PX: f64, frac: f64, coord: f64 ) void {
+        const scale = self.scale;
+        self.set( span_PX, frac, coord, scale );
+    }
+
+    fn set( self: *Axis1, span_PX: f64, frac: f64, coord: f64, scale: f64 ) void {
+        // TODO: Apply constraints
+        const span = span_PX / scale;
+        self.tieCoord = coord + ( self.tieFrac - frac )*span;
+        self.scale = scale;
+    }
+
+    fn setBounds( self: *Axis1, span_PX: f64, bounds: Interval1 ) void {
+        // TODO: Apply constraints
+        self.tieCoord = bounds.fracToValue( self.tieFrac );
+        self.scale = span_PX / bounds.span;
+    }
+
+    fn getBounds( self: *const Axis1, span_PX: f64 ) Interval1 {
+        const span = span_PX / self.scale;
+        const min = self.tieCoord - self.tieFrac*span;
+        return Interval1 {
+            .min = min,
+            .span = span,
+        };
+    }
+};
+
 
 const DummyProgram = struct {
     program: g.GLuint,
@@ -83,6 +156,10 @@ fn createDummyProgram( ) !DummyProgram {
 }
 
 pub fn main( ) !u8 {
+
+    // Window setup
+    //
+
     try s.initSDL( s.SDL_INIT_VIDEO );
     defer s.SDL_Quit( );
 
@@ -105,6 +182,23 @@ pub fn main( ) !u8 {
     try s.makeGLCurrent( window, context );
     try s.setGLSwapInterval( 0 );
 
+
+    // Application state
+    //
+
+    var wWindow_PX: c_int = undefined;
+    var hWindow_PX: c_int = undefined;
+    s.SDL_GL_GetDrawableSize( window, &wWindow_PX, &hWindow_PX );
+    var xAxis = Axis1.createWithMinMax( @intToFloat( f64, wWindow_PX ), -1, 1 );
+    var yAxis = Axis1.createWithMinMax( @intToFloat( f64, hWindow_PX ), -1, 1 );
+
+    var xMouseFrac: f64 = 0.5;
+    var yMouseFrac: f64 = 0.5;
+
+
+    // GL setup
+    //
+
     var vao: g.GLuint = 0;
     g.glGenVertexArrays( 1, &vao );
     defer g.glDeleteVertexArrays( 1, &vao );
@@ -122,12 +216,21 @@ pub fn main( ) !u8 {
 
     const dProgram = try createDummyProgram( );
 
+
+    // Render loop
+    //
+
     var running = true;
     while ( running ) {
-        var wDrawable: c_int = undefined;
-        var hDrawable: c_int = undefined;
-        s.SDL_GL_GetDrawableSize( window, &wDrawable, &hDrawable );
-        g.glViewport( 0, 0, wDrawable, hDrawable );
+        var wDrawable_PX: c_int = undefined;
+        var hDrawable_PX: c_int = undefined;
+        s.SDL_GL_GetDrawableSize( window, &wDrawable_PX, &hDrawable_PX );
+        g.glViewport( 0, 0, wDrawable_PX, hDrawable_PX );
+        var wViewport_PX = @intToFloat( f64, wDrawable_PX );
+        var hViewport_PX = @intToFloat( f64, hDrawable_PX );
+
+        const xBounds = xAxis.getBounds( wViewport_PX );
+        const yBounds = yAxis.getBounds( hViewport_PX );
 
         g.glClearColor( 0.0, 0.0, 0.0, 1.0 );
         g.glClear( g.GL_COLOR_BUFFER_BIT );
@@ -142,7 +245,7 @@ pub fn main( ) !u8 {
             g.glEnable( g.GL_VERTEX_PROGRAM_POINT_SIZE );
             defer g.glDisable( g.GL_VERTEX_PROGRAM_POINT_SIZE );
 
-            g.glUniform4f( dProgram.XY_BOUNDS, -1.0, -1.0, 2.0, 2.0 );
+            glUniformInterval2( dProgram.XY_BOUNDS, xBounds, yBounds );
             g.glUniform1f( dProgram.SIZE_PX, 15 );
             g.glUniform4f( dProgram.RGBA, 1.0, 0.0, 0.0, 1.0 );
             g.glBindBuffer( g.GL_ARRAY_BUFFER, dVertexCoords );
@@ -178,10 +281,8 @@ pub fn main( ) !u8 {
                         // TODO: Check ev.motion.windowID
                         // TODO: Check ev.motion.which
                         // TODO: Adjust coords for HiDPI
-                        const xFrac = ( @intToFloat( f64, ev.motion.x ) + 0.5 ) / @intToFloat( f64, wDrawable );
-                        const yFrac = 1.0 - ( ( @intToFloat( f64, ev.motion.y ) + 0.5 ) / @intToFloat( f64, hDrawable ) );
-                        // FIXME
-                        print( "MOUSE: {} {} {} {}\n", .{ ev.motion.x, ev.motion.y, xFrac, yFrac } );
+                        xMouseFrac = ( @intToFloat( f64, ev.motion.x ) + 0.5 ) / wViewport_PX;
+                        yMouseFrac = 1.0 - ( ( @intToFloat( f64, ev.motion.y ) + 0.5 ) / hViewport_PX );
                     },
                     s.SDL_MOUSEBUTTONDOWN => {
                         // TODO: Check ev.motion.windowID
@@ -214,8 +315,13 @@ pub fn main( ) !u8 {
                         if ( ev.wheel.direction == s.SDL_MOUSEWHEEL_FLIPPED ) {
                             zoomSteps = -zoomSteps;
                         }
-                        // FIXME
-                        print( "ZOOM: {}\n", .{ zoomSteps } );
+                        const zoomFactor = pow( f64, 1.12, @intToFloat( f64, zoomSteps ) );
+                        const xFrac = xMouseFrac;
+                        const yFrac = yMouseFrac;
+                        const xCoord = xBounds.fracToValue( xFrac );
+                        const yCoord = yBounds.fracToValue( yFrac );
+                        xAxis.set( wViewport_PX, xFrac, xCoord, xAxis.scale*zoomFactor );
+                        yAxis.set( hViewport_PX, yFrac, yCoord, yAxis.scale*zoomFactor );
                     },
                     else => {}
                 }
