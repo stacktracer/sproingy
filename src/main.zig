@@ -64,11 +64,22 @@ pub fn compileShaderSource( shaderType: c.GLenum, source: [*:0]const u8 ) !c.GLu
     return shader;
 }
 
+pub fn enablePremultipliedAlphaBlending( ) void {
+    c.glBlendEquation( c.GL_FUNC_ADD );
+    c.glBlendFunc( c.GL_ONE, c.GL_ONE_MINUS_SRC_ALPHA );
+    c.glEnable( c.GL_BLEND );
+}
+
+pub fn disableBlending( ) void {
+    c.glDisable( c.GL_BLEND );
+}
+
 
 const DummyProgram = struct {
     program: c.GLuint,
 
     XY_BOUNDS: c.GLint,
+    SIZE_PX: c.GLint,
     RGBA: c.GLint,
 
     /// x_XAXIS, y_YAXIS
@@ -96,25 +107,40 @@ fn createDummyProgram( ) !DummyProgram {
         \\}
         \\
         \\uniform vec4 XY_BOUNDS;
+        \\uniform float SIZE_PX;
         \\
         \\// x_XAXIS, y_YAXIS
         \\in vec2 inCoords;
         \\
-        \\void main(void) {
+        \\void main( void ) {
         \\    vec2 xy_XYAXIS = inCoords.xy;
         \\    gl_Position = vec4( coordsToNdc2D( xy_XYAXIS, XY_BOUNDS ), 0.0, 1.0 );
+        \\    gl_PointSize = SIZE_PX;
         \\}
     ;
 
     const fragSource =
         \\#version 150 core
+        \\precision lowp float;
         \\
+        \\const float FEATHER_PX = 0.9;
+        \\
+        \\uniform float SIZE_PX;
         \\uniform vec4 RGBA;
         \\
         \\out vec4 outRgba;
         \\
-        \\void main(void) {
-        \\    outRgba = vec4( 1.0, 0.0, 0.0, 1.0 );
+        \\void main( void ) {
+        \\    vec2 xy_NPC = -1.0 + 2.0*gl_PointCoord;
+        \\    float r_NPC = sqrt( dot( xy_NPC, xy_NPC ) );
+        \\
+        \\    float pxToNpc = 2.0 / SIZE_PX;
+        \\    float rOuter_NPC = 1.0 - 0.5*pxToNpc;
+        \\    float rInner_NPC = rOuter_NPC - FEATHER_PX*pxToNpc;
+        \\    float mask = smoothstep( rOuter_NPC, rInner_NPC, r_NPC );
+        \\
+        \\    float alpha = mask * RGBA.a;
+        \\    outRgba = vec4( alpha*RGBA.rgb, alpha );
         \\}
     ;
 
@@ -122,6 +148,7 @@ fn createDummyProgram( ) !DummyProgram {
     return DummyProgram {
         .program = dProgram,
         .XY_BOUNDS = c.glGetUniformLocation( dProgram, "XY_BOUNDS" ),
+        .SIZE_PX = c.glGetUniformLocation( dProgram, "SIZE_PX" ),
         .RGBA = c.glGetUniformLocation( dProgram, "RGBA" ),
         .inCoords = @intCast( c.GLuint, c.glGetAttribLocation( dProgram, "inCoords" ) ),
     };
@@ -215,16 +242,24 @@ pub fn main( ) !u8 {
         c.glClearColor( 0.0, 0.0, 0.0, 1.0 );
         c.glClear( c.GL_COLOR_BUFFER_BIT );
 
-        c.glUseProgram( dProgram.program );
+        {
+            enablePremultipliedAlphaBlending( );
+            defer disableBlending( );
 
-        c.glUniform4f( dProgram.XY_BOUNDS, -1.0, -1.0, 2.0, 2.0 );
-        c.glUniform4f( dProgram.RGBA, 1.0, 0.0, 0.0, 1.0 );
-        c.glBindBuffer( c.GL_ARRAY_BUFFER, dVertexCoords );
-        c.glEnableVertexAttribArray( dProgram.inCoords );
-        c.glVertexAttribPointer( dProgram.inCoords, 2, c.GL_FLOAT, c.GL_FALSE, 0, null );
-        c.glDrawArrays( c.GL_TRIANGLES, 0, 3 );
+            c.glUseProgram( dProgram.program );
+            defer c.glUseProgram( 0 );
 
-        c.glUseProgram( 0 );
+            c.glEnable( c.GL_VERTEX_PROGRAM_POINT_SIZE );
+            defer c.glDisable( c.GL_VERTEX_PROGRAM_POINT_SIZE );
+
+            c.glUniform4f( dProgram.XY_BOUNDS, -1.0, -1.0, 2.0, 2.0 );
+            c.glUniform1f( dProgram.SIZE_PX, 15 );
+            c.glUniform4f( dProgram.RGBA, 1.0, 0.0, 0.0, 1.0 );
+            c.glBindBuffer( c.GL_ARRAY_BUFFER, dVertexCoords );
+            c.glEnableVertexAttribArray( dProgram.inCoords );
+            c.glVertexAttribPointer( dProgram.inCoords, 2, c.GL_FLOAT, c.GL_FALSE, 0, null );
+            c.glDrawArrays( c.GL_POINTS, 0, hVertexCoords.len );
+        }
 
         c.SDL_GL_SwapWindow( window );
         c.SDL_Delay( 1 );
