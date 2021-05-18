@@ -7,31 +7,27 @@ const s = @import( "sdl2.zig" );
 
 
 const Dragger = struct {
-    const Self = @This( );
+    handlePressImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
+    handleDragImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
+    handleReleaseImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
 
-    handlePressImpl: fn ( self: *Self, axis: *Axis2, mouseFrac: Vec2 ) void,
-    handleDragImpl: fn ( self: *Self, axis: *Axis2, mouseFrac: Vec2 ) void,
-    handleReleaseImpl: fn ( self: *Self, axis: *Axis2, mouseFrac: Vec2 ) void,
-
-    fn handlePress( self: *Self, axis: *Axis2, mouseFrac: Vec2 ) void {
+    fn handlePress( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
         self.handlePressImpl( self, axis, mouseFrac );
     }
 
-    fn handleDrag( self: *Self, axis: *Axis2, mouseFrac: Vec2 ) void {
+    fn handleDrag( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
         self.handleDragImpl( self, axis, mouseFrac );
     }
 
-    fn handleRelease( self: *Self, axis: *Axis2, mouseFrac: Vec2 ) void {
+    fn handleRelease( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
         self.handleReleaseImpl( self, axis, mouseFrac );
     }
 };
 
 const Draggable = struct {
-    const Self = @This( );
+    getDraggerImpl: fn ( self: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger,
 
-    getDraggerImpl: fn ( self: *Self, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger,
-
-    fn getDragger( self: *Self, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
+    fn getDragger( self: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
         return self.getDraggerImpl( self, axis, mouseFrac );
     }
 };
@@ -182,31 +178,29 @@ fn glUniformInterval2( location: g.GLint, interval: Interval2 ) void {
 }
 
 const Axis2Panner = struct {
-    const Self = @This( );
     dragger: Dragger,
     grabCoord: Vec2,
 
     /// Pass this same axis to ensuing handleDrag and handleRelease calls
     fn handlePress( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Self, "dragger", dragger );
+        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
         self.grabCoord = axis.getBounds( ).fracToValue( mouseFrac );
     }
 
     /// Pass the same axis that was passed to the preceding handlePress call
     fn handleDrag( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Self, "dragger", dragger );
+        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
         axis.pan( mouseFrac, self.grabCoord );
     }
 
     /// Pass the same axis that was passed to the preceding handlePress call
     fn handleRelease( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Self, "dragger", dragger );
+        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
         axis.pan( mouseFrac, self.grabCoord );
     }
 
-    // TODO: Is it important to use Self here?
-    fn create( ) Self {
-        return Self {
+    fn create( ) Axis2Panner {
+        return Axis2Panner {
             .grabCoord = Vec2.create( nan( f64 ), nan( f64 ) ),
             .dragger = Dragger {
                 .handlePressImpl = handlePress,
@@ -218,14 +212,13 @@ const Axis2Panner = struct {
 };
 
 const Axis2 = struct {
-    const Self = @This( );
     x: Axis1,
     y: Axis1,
     panner: Axis2Panner,
     draggable: Draggable,
 
     fn getDragger( draggable: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
-        const self = @fieldParentPtr( Self, "draggable", draggable );
+        const self = @fieldParentPtr( Axis2, "draggable", draggable );
         return &self.panner.dragger;
     }
 
