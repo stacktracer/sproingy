@@ -396,8 +396,6 @@ pub fn main( ) !u8 {
 
     var axis = Axis2.createWithMinMax( -1, -1, 1, 1 );
     var mouseFrac = Vec2.create( 0.5, 0.5 );
-
-    // TODO: Array of draggables
     var draggables = [_]*Draggable{ &axis.draggable };
     var dragger: ?*Dragger = null;
 
