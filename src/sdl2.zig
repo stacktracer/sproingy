@@ -1,3 +1,6 @@
+const u = @import( "util.zig" );
+const Interval1 = u.Interval1;
+const Interval2 = u.Interval2;
 pub usingnamespace @cImport( {
     @cInclude( "SDL2/SDL.h" );
 } );
@@ -49,4 +52,24 @@ pub fn setMouseConfinedToWindow( window: *SDL_Window, confined: bool ) void {
 
 pub fn fromBool( b: bool ) SDL_bool {
     return @intToEnum( SDL_bool, if ( b ) SDL_TRUE else SDL_FALSE );
+}
+
+pub const Viewport = struct {
+    x_PX: c_int,
+    y_PX: c_int,
+    w_PX: c_int,
+    h_PX: c_int,
+
+    pub fn asInterval_PX( self: *const Viewport ) Interval2 {
+        return Interval2 {
+            .x = Interval1.create( @intToFloat( f64, self.x_PX ), @intToFloat( f64, self.w_PX ) ),
+            .y = Interval1.create( @intToFloat( f64, self.y_PX ), @intToFloat( f64, self.h_PX ) ),
+        };
+    }
+};
+
+pub fn getViewport( window: *SDL_Window ) Viewport {
+    var viewport = Viewport { .x_PX = 0, .y_PX = 0, .w_PX = 0, .h_PX = 0 };
+    SDL_GL_GetDrawableSize( window, &viewport.w_PX, &viewport.h_PX );
+    return viewport;
 }

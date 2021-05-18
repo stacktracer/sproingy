@@ -1,5 +1,10 @@
 const std = @import( "std" );
 const nan = std.math.nan;
+const u = @import( "util.zig" );
+const Vec2 = u.Vec2;
+const xy = u.xy;
+const Interval1 = u.Interval1;
+const Interval2 = u.Interval2;
 
 pub const Dragger = struct {
     handlePressImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
@@ -37,76 +42,16 @@ pub fn findDragger( draggables: []*Draggable, axis: *const Axis2, mouseFrac: Vec
     return null;
 }
 
-pub const Vec2 = struct {
-    x: f64,
-    y: f64,
-
-    pub fn create( x: f64, y: f64 ) Vec2 {
-        return Vec2 {
-            .x = x,
-            .y = y,
-        };
-    }
-
-    pub fn set( self: *Vec2, x: f64, y: f64 ) void {
-        self.x = x;
-        self.y = y;
-    }
-};
-
-pub const Interval1 = struct {
-    /// Inclusive lower bound.
-    min: f64,
-
-    /// Difference between min and exclusive upper bound.
-    span: f64,
-
-    pub fn create( min: f64, span: f64 ) Interval1 {
-        return Interval1 {
-            .min = min,
-            .span = span,
-        };
-    }
-
-    pub fn createWithMinMax( min: f64, max: f64 ) Interval1 {
-        return Interval1.create( min, max - min );
-    }
-
-    pub fn set( self: *Interval1, min: f64, span: f64 ) void {
-        self.min = min;
-        self.span = span;
-    }
-
-    pub fn valueToFrac( self: *const Interval1, value: f64 ) f64 {
-        return ( ( value - self.min ) / self.span );
-    }
-
-    pub fn fracToValue( self: *const Interval1, frac: f64 ) f64 {
-        return ( self.min + frac*self.span );
-    }
-};
-
 pub const Axis1 = struct {
     viewport_PX: Interval1,
+    tieFrac: f64 = 0.5,
+    tieCoord: f64 = 0.0,
+    scale: f64 = 1000,
 
-    // TODO: Any way to make tieFrac const?
-    tieFrac: f64,
-    tieCoord: f64,
-    scale: f64,
-
-    pub fn create( min: f64, span: f64 ) Axis1 {
-        var axis = Axis1 {
-            .viewport_PX = Interval1.createWithMinMax( 0, 1000 ),
-            .tieFrac = 0.5,
-            .tieCoord = 0.0,
-            .scale = 1000,
+    pub fn create( viewport_PX: Interval1 ) Axis1 {
+        return Axis1 {
+            .viewport_PX = viewport_PX,
         };
-        axis.setBounds( Interval1.create( min, span ) );
-        return axis;
-    }
-
-    pub fn createWithMinMax( min: f64, max: f64 ) Axis1 {
-        return Axis1.create( min, max - min );
     }
 
     pub fn pan( self: *Axis1, frac: f64, coord: f64 ) void {
@@ -137,32 +82,6 @@ pub const Axis1 = struct {
     }
 };
 
-pub const Interval2 = struct {
-    x: Interval1,
-    y: Interval1,
-
-    pub fn create( xMin: f64, yMin: f64, xSpan: f64, ySpan: f64 ) Interval2 {
-        return Interval2 {
-            .x = Interval1.create( xMin, xSpan ),
-            .y = Interval1.create( yMin, ySpan ),
-        };
-    }
-
-    pub fn valueToFrac( self: *const Interval2, value: Vec2 ) Vec2 {
-        return Vec2 {
-            .x = self.x.valueToFrac( value.x ),
-            .y = self.y.valueToFrac( value.y ),
-        };
-    }
-
-    pub fn fracToValue( self: *const Interval2, frac: Vec2 ) Vec2 {
-        return Vec2 {
-            .x = self.x.fracToValue( frac.x ),
-            .y = self.y.fracToValue( frac.y ),
-        };
-    }
-};
-
 pub const Axis2Panner = struct {
     dragger: Dragger,
     grabCoord: Vec2,
@@ -187,7 +106,7 @@ pub const Axis2Panner = struct {
 
     pub fn create( ) Axis2Panner {
         return Axis2Panner {
-            .grabCoord = Vec2.create( nan( f64 ), nan( f64 ) ),
+            .grabCoord = xy( nan( f64 ), nan( f64 ) ),
             .dragger = Dragger {
                 .handlePressImpl = handlePress,
                 .handleDragImpl = handleDrag,
@@ -208,10 +127,10 @@ pub const Axis2 = struct {
         return &self.panner.dragger;
     }
 
-    pub fn create( xMin: f64, yMin: f64, xSpan: f64, ySpan: f64 ) Axis2 {
+    pub fn create( viewport_PX: Interval2 ) Axis2 {
         return Axis2 {
-            .x = Axis1.create( xMin, xSpan ),
-            .y = Axis1.create( yMin, ySpan ),
+            .x = Axis1.create( viewport_PX.x ),
+            .y = Axis1.create( viewport_PX.y ),
             .panner = Axis2Panner.create( ),
             .draggable = Draggable {
                 .getDraggerImpl = getDragger,
@@ -219,8 +138,9 @@ pub const Axis2 = struct {
         };
     }
 
-    pub fn createWithMinMax( xMin: f64, yMin: f64, xMax: f64, yMax: f64 ) Axis2 {
-        return Axis2.create( xMin, yMin, xMax - xMin, yMax - yMin );
+    pub fn setViewport_PX( self: *Axis2, viewport_PX: Interval2 ) void {
+        self.x.viewport_PX = viewport_PX.x;
+        self.y.viewport_PX = viewport_PX.y;
     }
 
     // TODO: Maybe don't return by value?
@@ -243,6 +163,12 @@ pub const Axis2 = struct {
         self.y.set( frac.y, coord.y, scale.y );
     }
 
+    pub fn setBounds( self: *Axis2, bounds: Interval2 ) void {
+        // TODO: Not sure this will work well with axis constraints
+        self.x.setBounds( bounds.x );
+        self.y.setBounds( bounds.y );
+    }
+
     // TODO: Maybe don't return by value?
     pub fn getBounds( self: *const Axis2 ) Interval2 {
         return Interval2 {
@@ -255,7 +181,7 @@ pub const Axis2 = struct {
 pub fn getPixelFrac( axis: *const Axis2, x: c_int, y: c_int ) Vec2 {
     // TODO: Adjust coords for HiDPI
     // Add 0.5 to get the center of the pixel
-    const coord_PX = Vec2.create( @intToFloat( f64, x ) + 0.5, @intToFloat( f64, y ) + 0.5 );
+    const coord_PX = xy( @intToFloat( f64, x ) + 0.5, @intToFloat( f64, y ) + 0.5 );
     var frac = axis.getViewport_PX( ).valueToFrac( coord_PX );
     // Invert so y increases upward
     frac.y = 1.0 - frac.y;

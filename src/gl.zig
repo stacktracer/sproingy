@@ -1,6 +1,7 @@
 const std = @import( "std" );
 const warn = std.debug.warn;
-const a = @import( "axis.zig" );
+const u = @import( "util.zig" );
+const Interval2 = u.Interval2;
 const cAllocator = std.heap.c_allocator;
 pub usingnamespace @cImport( {
     @cInclude( "epoxy/gl.h" );
@@ -75,7 +76,7 @@ pub fn disableBlending( ) void {
     glDisable( GL_BLEND );
 }
 
-pub fn glUniformInterval2( location: GLint, interval: a.Interval2 ) void {
+pub fn glUniformInterval2( location: GLint, interval: Interval2 ) void {
     glUniform4f( location,
                  @floatCast( f32, interval.x.min ),
                  @floatCast( f32, interval.y.min ),

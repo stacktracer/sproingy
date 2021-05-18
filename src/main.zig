@@ -1,11 +1,13 @@
 const std = @import( "std" );
 const pow = std.math.pow;
 const print = std.debug.print;
+const u = @import( "util.zig" );
+const xy = u.xy;
+const xywh = u.xywh;
 const g = @import( "gl.zig" );
 const s = @import( "sdl2.zig" );
 const a = @import( "axis.zig" );
 const Axis2 = a.Axis2;
-const Vec2 = a.Vec2;
 const getPixelFrac = a.getPixelFrac;
 const Draggable = a.Draggable;
 const Dragger = a.Dragger;
@@ -122,8 +124,9 @@ pub fn main( ) !u8 {
     // Application state
     //
 
-    var axis = Axis2.createWithMinMax( -1, -1, 1, 1 );
-    var mouseFrac = Vec2.create( 0.5, 0.5 );
+    var axis = Axis2.create( s.getViewport( window ).asInterval_PX( ) );
+    axis.setBounds( xywh( -1.0, -1.0, 2.0, 2.0 ) );
+    var mouseFrac = xy( 0.5, 0.5 );
     var draggables = [_]*Draggable{ &axis.draggable };
     var dragger: ?*Dragger = null;
 
@@ -154,12 +157,9 @@ pub fn main( ) !u8 {
 
     var running = true;
     while ( running ) {
-        var wDrawable_PX: c_int = 0;
-        var hDrawable_PX: c_int = 0;
-        s.SDL_GL_GetDrawableSize( window, &wDrawable_PX, &hDrawable_PX );
-        g.glViewport( 0, 0, wDrawable_PX, hDrawable_PX );
-        axis.x.viewport_PX.set( 0, @intToFloat( f64, wDrawable_PX ) );
-        axis.y.viewport_PX.set( 0, @intToFloat( f64, hDrawable_PX ) );
+        const viewport = s.getViewport( window );
+        g.glViewport( viewport.x_PX, viewport.y_PX, viewport.w_PX, viewport.h_PX );
+        axis.setViewport_PX( viewport.asInterval_PX( ) );
         const bounds = axis.getBounds( );
 
         g.glClearColor( 0.0, 0.0, 0.0, 1.0 );
@@ -253,7 +253,7 @@ pub fn main( ) !u8 {
                             const zoomFactor = pow( f64, 1.12, @intToFloat( f64, zoomSteps ) );
                             const frac = mouseFrac;
                             const coord = bounds.fracToValue( frac );
-                            const scale = Vec2.create( zoomFactor*axis.x.scale, zoomFactor*axis.y.scale );
+                            const scale = xy( zoomFactor*axis.x.scale, zoomFactor*axis.y.scale );
                             axis.set( frac, coord, scale );
                         }
                     },
