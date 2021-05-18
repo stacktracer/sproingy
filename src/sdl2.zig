@@ -22,6 +22,11 @@ pub fn createWindow( title: [*]const u8, x: c_int, y: c_int, w: c_int, h: c_int,
     return SDL_CreateWindow( title, x, y, w, h, flags ) orelse Error.GenericFailure;
 }
 
+pub fn getWindowID( window: *SDL_Window ) !u32 {
+    const result = SDL_GetWindowID( window );
+    return ( if ( result != 0 ) result else Error.GenericFailure );
+}
+
 pub fn setGLAttr( attr: c_int, value: c_int ) Error!void {
     return checkStatus( SDL_GL_SetAttribute( @intToEnum( SDL_GLattr, attr ), value ) );
 }
