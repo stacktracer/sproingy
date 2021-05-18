@@ -144,7 +144,7 @@ pub fn main( ) !u8 {
         [_]g.GLfloat{ 0.5, 0.0 },
         [_]g.GLfloat{ 0.0, 0.5 },
     };
-    var dVertexCoords = @intCast( g.GLuint, 0 );
+    var dVertexCoords = @as( g.GLuint, 0 );
     g.glGenBuffers( 1, &dVertexCoords );
     g.glBindBuffer( g.GL_ARRAY_BUFFER, dVertexCoords );
     g.glBufferData( g.GL_ARRAY_BUFFER, hVertexCoords.len*2*@sizeOf( g.GLfloat ), @ptrCast( *const c_void, &hVertexCoords[0][0] ), g.GL_STATIC_DRAW );
