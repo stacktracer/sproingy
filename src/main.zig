@@ -186,7 +186,6 @@ pub fn main( ) !u8 {
         s.SDL_GL_SwapWindow( window );
         s.SDL_Delay( 1 );
 
-        // TODO: Does SDL do any event coalescing?
         while ( true ) {
             var ev: s.SDL_Event = undefined;
             if ( s.SDL_PollEvent( &ev ) == 0 ) {
@@ -225,6 +224,7 @@ pub fn main( ) !u8 {
                     s.SDL_MOUSEMOTION => {
                         // TODO: Check ev.motion.windowID
                         // TODO: Check ev.motion.which
+                        // TODO: Maybe coalesce mouse moves, but don't mix moves and drags
                         mouseFrac = getPixelFrac( &axis, ev.motion.x, ev.motion.y );
                         if ( dragger != null ) {
                             dragger.?.handleDrag( &axis, mouseFrac );
