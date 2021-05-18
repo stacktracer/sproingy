@@ -1,7 +1,6 @@
 const std = @import( "std" );
 const warn = std.debug.warn;
 const a = @import( "axis.zig" );
-// TODO: How do various allocators differ?
 const cAllocator = std.heap.c_allocator;
 pub usingnamespace @cImport( {
     @cInclude( "epoxy/gl.h" );
@@ -11,6 +10,7 @@ const Error = error {
     GenericFailure,
 };
 
+// TODO: Maybe take an allocator arg, but only if we're going to have an allocator handy for other purposes
 pub fn createProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) !GLuint {
     const vertShader = try compileShaderSource( GL_VERTEX_SHADER, vertSource );
     defer glDeleteShader( vertShader );
