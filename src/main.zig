@@ -188,20 +188,20 @@ pub fn main( ) !u8 {
         s.SDL_Delay( 1 );
 
         while ( true ) {
-            var ev: s.SDL_Event = undefined;
-            if ( s.SDL_PollEvent( &ev ) == 0 ) {
+            var event: s.SDL_Event = undefined;
+            if ( s.SDL_PollEvent( &event ) == 0 ) {
                 break;
             }
             else {
-                switch ( ev.type ) {
+                switch ( event.type ) {
                     s.SDL_QUIT => running = false,
                     s.SDL_KEYDOWN => {
-                        if ( ev.key.windowID == windowID ) {
-                            const keysym = ev.key.keysym;
-                            switch ( keysym.sym ) {
+                        const ev = event.key;
+                        if ( ev.windowID == windowID ) {
+                            switch ( ev.keysym.sym ) {
                                 s.SDLK_ESCAPE => running = false,
                                 s.SDLK_w => {
-                                    if ( @intCast( c_int, keysym.mod ) & s.KMOD_CTRL != 0 ) {
+                                    if ( @intCast( c_int, ev.keysym.mod ) & s.KMOD_CTRL != 0 ) {
                                         running = false;
                                     }
                                 },
@@ -210,52 +210,44 @@ pub fn main( ) !u8 {
                         }
                     },
                     s.SDL_MOUSEBUTTONDOWN => {
-                        // TODO: Check ev.button.which
-                        if ( ev.button.windowID == windowID ) {
-                            switch ( ev.button.button ) {
-                                s.SDL_BUTTON_LEFT => {
-                                    s.setMouseConfinedToWindow( window, true );
-                                    mouseFrac = getPixelFrac( &axis, ev.button.x, ev.button.y );
-                                    dragger = findDragger( draggables[0..], &axis, mouseFrac );
-                                    if ( dragger != null ) {
-                                        dragger.?.handlePress( &axis, mouseFrac );
-                                    }
-                                },
-                                else => {}
+                        const ev = event.button;
+                        if ( ev.windowID == windowID and ev.button == s.SDL_BUTTON_LEFT ) {
+                            // Really want SDL_CaptureMouse instead, but it is flaky
+                            s.setMouseConfinedToWindow( window, true );
+                            mouseFrac = getPixelFrac( &axis, ev.x, ev.y );
+                            // Despite the "ev.which" field, SDL2 doesn't really support multi-cursor
+                            dragger = findDragger( draggables[0..], &axis, mouseFrac );
+                            if ( dragger != null ) {
+                                dragger.?.handlePress( &axis, mouseFrac );
                             }
                         }
                     },
                     s.SDL_MOUSEMOTION => {
-                        // TODO: Check ev.motion.which
                         // TODO: Maybe coalesce mouse moves, but don't mix moves and drags
-                        if ( ev.motion.windowID == windowID ) {
-                            mouseFrac = getPixelFrac( &axis, ev.motion.x, ev.motion.y );
+                        const ev = event.motion;
+                        if ( ev.windowID == windowID ) {
+                            mouseFrac = getPixelFrac( &axis, ev.x, ev.y );
                             if ( dragger != null ) {
                                 dragger.?.handleDrag( &axis, mouseFrac );
                             }
                         }
                     },
                     s.SDL_MOUSEBUTTONUP => {
-                        // TODO: Check ev.button.which
-                        if ( ev.button.windowID == windowID ) {
-                            switch ( ev.button.button ) {
-                                s.SDL_BUTTON_LEFT => {
-                                    s.setMouseConfinedToWindow( window, false );
-                                    mouseFrac = getPixelFrac( &axis, ev.button.x, ev.button.y );
-                                    if ( dragger != null ) {
-                                        dragger.?.handleRelease( &axis, mouseFrac );
-                                        dragger = null;
-                                    }
-                                },
-                                else => {}
+                        const ev = event.button;
+                        if ( ev.windowID == windowID and ev.button == s.SDL_BUTTON_LEFT ) {
+                            s.setMouseConfinedToWindow( window, false );
+                            mouseFrac = getPixelFrac( &axis, ev.x, ev.y );
+                            if ( dragger != null ) {
+                                dragger.?.handleRelease( &axis, mouseFrac );
+                                dragger = null;
                             }
                         }
                     },
                     s.SDL_MOUSEWHEEL => {
-                        // TODO: Check ev.wheel.which
-                        if ( ev.wheel.windowID == windowID ) {
-                            var zoomSteps = ev.wheel.y;
-                            if ( ev.wheel.direction == s.SDL_MOUSEWHEEL_FLIPPED ) {
+                        const ev = event.wheel;
+                        if ( ev.windowID == windowID ) {
+                            var zoomSteps = ev.y;
+                            if ( ev.direction == s.SDL_MOUSEWHEEL_FLIPPED ) {
                                 zoomSteps = -zoomSteps;
                             }
                             const zoomFactor = pow( f64, 1.12, @intToFloat( f64, zoomSteps ) );
