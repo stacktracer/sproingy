@@ -1,5 +1,6 @@
 const std = @import( "std" );
 const warn = std.debug.warn;
+const a = @import( "axis.zig" );
 // TODO: How do various allocators differ?
 const cAllocator = std.heap.c_allocator;
 pub usingnamespace @cImport( {
@@ -72,4 +73,12 @@ pub fn enablePremultipliedAlphaBlending( ) void {
 
 pub fn disableBlending( ) void {
     glDisable( GL_BLEND );
+}
+
+pub fn glUniformInterval2( location: GLint, interval: a.Interval2 ) void {
+    glUniform4f( location,
+                 @floatCast( f32, interval.x.min ),
+                 @floatCast( f32, interval.y.min ),
+                 @floatCast( f32, interval.x.span ),
+                 @floatCast( f32, interval.y.span ) );
 }

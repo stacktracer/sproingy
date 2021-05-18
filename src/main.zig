@@ -1,281 +1,15 @@
 const std = @import( "std" );
 const pow = std.math.pow;
-const nan = std.math.nan;
 const print = std.debug.print;
 const g = @import( "gl.zig" );
 const s = @import( "sdl2.zig" );
-
-
-const Dragger = struct {
-    handlePressImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
-    handleDragImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
-    handleReleaseImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
-
-    fn handlePress( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        self.handlePressImpl( self, axis, mouseFrac );
-    }
-
-    fn handleDrag( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        self.handleDragImpl( self, axis, mouseFrac );
-    }
-
-    fn handleRelease( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        self.handleReleaseImpl( self, axis, mouseFrac );
-    }
-};
-
-const Draggable = struct {
-    getDraggerImpl: fn ( self: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger,
-
-    fn getDragger( self: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
-        return self.getDraggerImpl( self, axis, mouseFrac );
-    }
-};
-
-fn findDragger( draggables: []*Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
-    for ( draggables ) |draggable| {
-        const dragger = draggable.getDragger( axis, mouseFrac );
-        if ( dragger != null ) {
-            return dragger;
-        }
-    }
-    return null;
-}
-
-// TODO: Move to a utilities file
-const Vec2 = struct {
-    x: f64,
-    y: f64,
-
-    fn create( x: f64, y: f64 ) Vec2 {
-        return Vec2 {
-            .x = x,
-            .y = y,
-        };
-    }
-
-    fn set( self: *Vec2, x: f64, y: f64 ) void {
-        self.x = x;
-        self.y = y;
-    }
-};
-
-const Interval1 = struct {
-    /// Inclusive lower bound.
-    min: f64,
-
-    /// Difference between min and exclusive upper bound.
-    span: f64,
-
-    fn create( min: f64, span: f64 ) Interval1 {
-        return Interval1 {
-            .min = min,
-            .span = span,
-        };
-    }
-
-    fn createWithMinMax( min: f64, max: f64 ) Interval1 {
-        return Interval1.create( min, max - min );
-    }
-
-    fn set( self: *Interval1, min: f64, span: f64 ) void {
-        self.min = min;
-        self.span = span;
-    }
-
-    fn valueToFrac( self: *const Interval1, value: f64 ) f64 {
-        return ( ( value - self.min ) / self.span );
-    }
-
-    fn fracToValue( self: *const Interval1, frac: f64 ) f64 {
-        return ( self.min + frac*self.span );
-    }
-};
-
-const Axis1 = struct {
-    viewport_PX: Interval1,
-
-    // TODO: Any way to make tieFrac const?
-    tieFrac: f64,
-    tieCoord: f64,
-    scale: f64,
-
-    fn create( min: f64, span: f64 ) Axis1 {
-        var axis = Axis1 {
-            .viewport_PX = Interval1.createWithMinMax( 0, 1000 ),
-            .tieFrac = 0.5,
-            .tieCoord = 0.0,
-            .scale = 1000,
-        };
-        axis.setBounds( Interval1.create( min, span ) );
-        return axis;
-    }
-
-    fn createWithMinMax( min: f64, max: f64 ) Axis1 {
-        return Axis1.create( min, max - min );
-    }
-
-    fn pan( self: *Axis1, frac: f64, coord: f64 ) void {
-        const scale = self.scale;
-        self.set( frac, coord, scale );
-    }
-
-    fn set( self: *Axis1, frac: f64, coord: f64, scale: f64 ) void {
-        // TODO: Apply constraints
-        const span = self.viewport_PX.span / scale;
-        self.tieCoord = coord + ( self.tieFrac - frac )*span;
-        self.scale = scale;
-    }
-
-    fn setBounds( self: *Axis1, bounds: Interval1 ) void {
-        // TODO: Apply constraints
-        self.tieCoord = bounds.fracToValue( self.tieFrac );
-        self.scale = self.viewport_PX.span / bounds.span;
-    }
-
-    fn getBounds( self: *const Axis1 ) Interval1 {
-        const span = self.viewport_PX.span / self.scale;
-        const min = self.tieCoord - self.tieFrac*span;
-        return Interval1 {
-            .min = min,
-            .span = span,
-        };
-    }
-};
-
-const Interval2 = struct {
-    x: Interval1,
-    y: Interval1,
-
-    fn create( xMin: f64, yMin: f64, xSpan: f64, ySpan: f64 ) Interval2 {
-        return Interval2 {
-            .x = Interval1.create( xMin, xSpan ),
-            .y = Interval1.create( yMin, ySpan ),
-        };
-    }
-
-    fn valueToFrac( self: *const Interval2, value: Vec2 ) Vec2 {
-        return Vec2 {
-            .x = self.x.valueToFrac( value.x ),
-            .y = self.y.valueToFrac( value.y ),
-        };
-    }
-
-    fn fracToValue( self: *const Interval2, frac: Vec2 ) Vec2 {
-        return Vec2 {
-            .x = self.x.fracToValue( frac.x ),
-            .y = self.y.fracToValue( frac.y ),
-        };
-    }
-};
-
-fn glUniformInterval2( location: g.GLint, interval: Interval2 ) void {
-    g.glUniform4f( location,
-                   @floatCast( f32, interval.x.min ),
-                   @floatCast( f32, interval.y.min ),
-                   @floatCast( f32, interval.x.span ),
-                   @floatCast( f32, interval.y.span ) );
-}
-
-const Axis2Panner = struct {
-    dragger: Dragger,
-    grabCoord: Vec2,
-
-    /// Pass this same axis to ensuing handleDrag and handleRelease calls
-    fn handlePress( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
-        self.grabCoord = axis.getBounds( ).fracToValue( mouseFrac );
-    }
-
-    /// Pass the same axis that was passed to the preceding handlePress call
-    fn handleDrag( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
-        axis.pan( mouseFrac, self.grabCoord );
-    }
-
-    /// Pass the same axis that was passed to the preceding handlePress call
-    fn handleRelease( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
-        axis.pan( mouseFrac, self.grabCoord );
-    }
-
-    fn create( ) Axis2Panner {
-        return Axis2Panner {
-            .grabCoord = Vec2.create( nan( f64 ), nan( f64 ) ),
-            .dragger = Dragger {
-                .handlePressImpl = handlePress,
-                .handleDragImpl = handleDrag,
-                .handleReleaseImpl = handleRelease,
-            },
-        };
-    }
-};
-
-const Axis2 = struct {
-    x: Axis1,
-    y: Axis1,
-    panner: Axis2Panner,
-    draggable: Draggable,
-
-    fn getDragger( draggable: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
-        const self = @fieldParentPtr( Axis2, "draggable", draggable );
-        return &self.panner.dragger;
-    }
-
-    fn create( xMin: f64, yMin: f64, xSpan: f64, ySpan: f64 ) Axis2 {
-        return Axis2 {
-            .x = Axis1.create( xMin, xSpan ),
-            .y = Axis1.create( yMin, ySpan ),
-            .panner = Axis2Panner.create( ),
-            .draggable = Draggable {
-                .getDraggerImpl = getDragger,
-            },
-        };
-    }
-
-    fn createWithMinMax( xMin: f64, yMin: f64, xMax: f64, yMax: f64 ) Axis2 {
-        return Axis2.create( xMin, yMin, xMax - xMin, yMax - yMin );
-    }
-
-    // TODO: Maybe don't return by value?
-    fn getViewport_PX( self: *const Axis2 ) Interval2 {
-        return Interval2 {
-            .x = self.x.viewport_PX,
-            .y = self.y.viewport_PX,
-        };
-    }
-
-    fn pan( self: *Axis2, frac: Vec2, coord: Vec2 ) void {
-        // TODO: Not sure this will work well with axis constraints
-        self.x.pan( frac.x, coord.x );
-        self.y.pan( frac.y, coord.y );
-    }
-
-    fn set( self: *Axis2, frac: Vec2, coord: Vec2, scale: Vec2 ) void {
-        // TODO: Not sure this will work well with axis constraints
-        self.x.set( frac.x, coord.x, scale.x );
-        self.y.set( frac.y, coord.y, scale.y );
-    }
-
-    // TODO: Maybe don't return by value?
-    fn getBounds( self: *const Axis2 ) Interval2 {
-        return Interval2 {
-            .x = self.x.getBounds( ),
-            .y = self.y.getBounds( ),
-        };
-    }
-};
-
-fn getPixelFrac( axis: *const Axis2, x: c_int, y: c_int ) Vec2 {
-    // TODO: Adjust coords for HiDPI
-    // Add 0.5 to get the center of the pixel
-    const coord_PX = Vec2.create( @intToFloat( f64, x ) + 0.5, @intToFloat( f64, y ) + 0.5 );
-    var frac = axis.getViewport_PX( ).valueToFrac( coord_PX );
-    // Invert so y increases upward
-    frac.y = 1.0 - frac.y;
-    return frac;
-}
-
+const a = @import( "axis.zig" );
+const Axis2 = a.Axis2;
+const Vec2 = a.Vec2;
+const getPixelFrac = a.getPixelFrac;
+const Draggable = a.Draggable;
+const Dragger = a.Dragger;
+const findDragger = a.findDragger;
 
 const DummyProgram = struct {
     program: g.GLuint,
@@ -440,7 +174,7 @@ pub fn main( ) !u8 {
             g.glEnable( g.GL_VERTEX_PROGRAM_POINT_SIZE );
             defer g.glDisable( g.GL_VERTEX_PROGRAM_POINT_SIZE );
 
-            glUniformInterval2( dProgram.XY_BOUNDS, bounds );
+            g.glUniformInterval2( dProgram.XY_BOUNDS, bounds );
             g.glUniform1f( dProgram.SIZE_PX, 15 );
             g.glUniform4f( dProgram.RGBA, 1.0, 0.0, 0.0, 1.0 );
             g.glBindBuffer( g.GL_ARRAY_BUFFER, dVertexCoords );
@@ -474,8 +208,8 @@ pub fn main( ) !u8 {
                         }
                     },
                     s.SDL_MOUSEBUTTONDOWN => {
-                        // TODO: Check ev.motion.windowID
-                        // TODO: Check ev.motion.which
+                        // TODO: Check ev.button.windowID
+                        // TODO: Check ev.button.which
                         switch ( ev.button.button ) {
                             s.SDL_BUTTON_LEFT => {
                                 s.setMouseConfinedToWindow( window, true );
@@ -497,8 +231,8 @@ pub fn main( ) !u8 {
                         }
                     },
                     s.SDL_MOUSEBUTTONUP => {
-                        // TODO: Check ev.motion.windowID
-                        // TODO: Check ev.motion.which
+                        // TODO: Check ev.button.windowID
+                        // TODO: Check ev.button.which
                         switch ( ev.button.button ) {
                             s.SDL_BUTTON_LEFT => {
                                 s.setMouseConfinedToWindow( window, false );
