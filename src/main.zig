@@ -461,6 +461,7 @@ pub fn main( ) !u8 {
         s.SDL_GL_SwapWindow( window );
         s.SDL_Delay( 1 );
 
+        // TODO: Does SDL do any event coalescing?
         while ( true ) {
             var ev: s.SDL_Event = undefined;
             if ( s.SDL_PollEvent( &ev ) == 0 ) {
