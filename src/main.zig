@@ -100,15 +100,15 @@ pub fn main( ) !u8 {
     try s.initSDL( s.SDL_INIT_VIDEO );
     defer s.SDL_Quit( );
 
-    try s.setGLAttr( s.SDL_GL_DOUBLEBUFFER, 1 );
-    try s.setGLAttr( s.SDL_GL_ACCELERATED_VISUAL, 1 );
-    try s.setGLAttr( s.SDL_GL_RED_SIZE, 8 );
-    try s.setGLAttr( s.SDL_GL_GREEN_SIZE, 8 );
-    try s.setGLAttr( s.SDL_GL_BLUE_SIZE, 8 );
-    try s.setGLAttr( s.SDL_GL_ALPHA_SIZE, 8 );
-    try s.setGLAttr( s.SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
-    try s.setGLAttr( s.SDL_GL_CONTEXT_MINOR_VERSION, 2 );
-    try s.setGLAttr( s.SDL_GL_CONTEXT_PROFILE_MASK, s.SDL_GL_CONTEXT_PROFILE_CORE );
+    try s.setGLAttr( .SDL_GL_DOUBLEBUFFER, 1 );
+    try s.setGLAttr( .SDL_GL_ACCELERATED_VISUAL, 1 );
+    try s.setGLAttr( .SDL_GL_RED_SIZE, 8 );
+    try s.setGLAttr( .SDL_GL_GREEN_SIZE, 8 );
+    try s.setGLAttr( .SDL_GL_BLUE_SIZE, 8 );
+    try s.setGLAttr( .SDL_GL_ALPHA_SIZE, 8 );
+    try s.setGLAttr( .SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
+    try s.setGLAttr( .SDL_GL_CONTEXT_MINOR_VERSION, 2 );
+    try s.setGLAttr( .SDL_GL_CONTEXT_PROFILE_MASK, s.SDL_GL_CONTEXT_PROFILE_CORE );
 
     // TODO: How well does SDL2 support hidpi, in practice?
     const window = try s.createWindow( "Dummy", s.SDL_WINDOWPOS_UNDEFINED, s.SDL_WINDOWPOS_UNDEFINED, 800, 600, s.SDL_WINDOW_OPENGL | s.SDL_WINDOW_ALLOW_HIGHDPI | s.SDL_WINDOW_RESIZABLE | s.SDL_WINDOW_SHOWN );

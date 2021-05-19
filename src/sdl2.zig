@@ -30,8 +30,8 @@ pub fn getWindowID( window: *SDL_Window ) !u32 {
     return ( if ( result != 0 ) result else Error.GenericFailure );
 }
 
-pub fn setGLAttr( attr: c_int, value: c_int ) Error!void {
-    return checkStatus( SDL_GL_SetAttribute( @intToEnum( SDL_GLattr, attr ), value ) );
+pub fn setGLAttr( attr: SDL_GLattr, value: c_int ) Error!void {
+    return checkStatus( SDL_GL_SetAttribute( attr, value ) );
 }
 
 pub fn createGLContext( window: *SDL_Window ) !*SDL_GLContext {
@@ -51,7 +51,7 @@ pub fn setMouseConfinedToWindow( window: *SDL_Window, confined: bool ) void {
 }
 
 pub fn fromBool( b: bool ) SDL_bool {
-    return @intToEnum( SDL_bool, if ( b ) SDL_TRUE else SDL_FALSE );
+    return if ( b ) .SDL_TRUE else .SDL_FALSE;
 }
 
 pub const FrameSize = struct {
