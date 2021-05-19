@@ -8,7 +8,7 @@ const g = @import( "gl.zig" );
 const s = @import( "sdl2.zig" );
 const a = @import( "axis.zig" );
 const Axis2 = a.Axis2;
-const getPixelFrac = a.getPixelFrac;
+const lpxToAxisFrac = a.lpxToAxisFrac;
 const Draggable = a.Draggable;
 const Dragger = a.Dragger;
 const findDragger = a.findDragger;
@@ -94,7 +94,7 @@ fn createDummyProgram( ) !DummyProgram {
 
 pub fn main( ) !u8 {
 
-    // Window setup
+    // SDL setup
     //
 
     try s.initSDL( s.SDL_INIT_VIDEO );
@@ -110,7 +110,8 @@ pub fn main( ) !u8 {
     try s.setGLAttr( s.SDL_GL_CONTEXT_MINOR_VERSION, 2 );
     try s.setGLAttr( s.SDL_GL_CONTEXT_PROFILE_MASK, s.SDL_GL_CONTEXT_PROFILE_CORE );
 
-    const window = try s.createWindow( "Dummy", s.SDL_WINDOWPOS_UNDEFINED, s.SDL_WINDOWPOS_UNDEFINED, 800, 600, s.SDL_WINDOW_OPENGL | s.SDL_WINDOW_RESIZABLE | s.SDL_WINDOW_SHOWN );
+    // TODO: How well does SDL2 support hidpi, in practice?
+    const window = try s.createWindow( "Dummy", s.SDL_WINDOWPOS_UNDEFINED, s.SDL_WINDOWPOS_UNDEFINED, 800, 600, s.SDL_WINDOW_OPENGL | s.SDL_WINDOW_ALLOW_HIGHDPI | s.SDL_WINDOW_RESIZABLE | s.SDL_WINDOW_SHOWN );
     const windowID = try s.getWindowID( window );
     defer s.SDL_DestroyWindow( window );
 
@@ -121,16 +122,6 @@ pub fn main( ) !u8 {
     try s.setGLSwapInterval( 0 );
 
 
-    // Application state
-    //
-
-    var axis = Axis2.create( s.getViewport( window ).asInterval_PX( ) );
-    axis.setBounds( xywh( -1.0, -1.0, 2.0, 2.0 ) );
-    var mouseFrac = xy( 0.5, 0.5 );
-    var draggables = [_]*Draggable{ &axis.draggable };
-    var dragger: ?*Dragger = null;
-
-
     // GL setup
     //
 
@@ -138,6 +129,17 @@ pub fn main( ) !u8 {
     g.glGenVertexArrays( 1, &vao );
     defer g.glDeleteVertexArrays( 1, &vao );
     g.glBindVertexArray( vao );
+
+
+    // Application state
+    //
+
+    var frameSize = s.getFrameSize( window );
+    var axis = Axis2.create( frameSize.asViewport_PX( ) );
+    axis.setBounds( xywh( -1.0, -1.0, 2.0, 2.0 ) );
+    var mouseFrac = xy( 0.5, 0.5 );
+    var draggables = [_]*Draggable{ &axis.draggable };
+    var dragger: ?*Dragger = null;
 
     const hVertexCoords = [_][2]g.GLfloat{
         [_]g.GLfloat{ 0.0, 0.0 },
@@ -157,9 +159,9 @@ pub fn main( ) !u8 {
 
     var running = true;
     while ( running ) {
-        const viewport = s.getViewport( window );
-        g.glViewport( viewport.x_PX, viewport.y_PX, viewport.w_PX, viewport.h_PX );
-        axis.setViewport_PX( viewport.asInterval_PX( ) );
+        frameSize = s.getFrameSize( window );
+        g.glViewport( 0, 0, frameSize.w_PX, frameSize.h_PX );
+        axis.setViewport_PX( frameSize.asViewport_PX( ) );
         const bounds = axis.getBounds( );
 
         g.glClearColor( 0.0, 0.0, 0.0, 1.0 );
@@ -214,7 +216,7 @@ pub fn main( ) !u8 {
                         if ( ev.windowID == windowID and ev.button == s.SDL_BUTTON_LEFT ) {
                             // Really want SDL_CaptureMouse instead, but it is flaky
                             s.setMouseConfinedToWindow( window, true );
-                            mouseFrac = getPixelFrac( &axis, ev.x, ev.y );
+                            mouseFrac = lpxToAxisFrac( &axis, ev.x, ev.y, frameSize.xDpr, frameSize.yDpr );
                             // Despite the "ev.which" field, SDL2 doesn't really support multi-cursor
                             dragger = findDragger( draggables[0..], &axis, mouseFrac );
                             if ( dragger != null ) {
@@ -226,7 +228,7 @@ pub fn main( ) !u8 {
                         // TODO: Maybe coalesce mouse moves, but don't mix moves and drags
                         const ev = event.motion;
                         if ( ev.windowID == windowID ) {
-                            mouseFrac = getPixelFrac( &axis, ev.x, ev.y );
+                            mouseFrac = lpxToAxisFrac( &axis, ev.x, ev.y, frameSize.xDpr, frameSize.yDpr );
                             if ( dragger != null ) {
                                 dragger.?.handleDrag( &axis, mouseFrac );
                             }
@@ -236,7 +238,7 @@ pub fn main( ) !u8 {
                         const ev = event.button;
                         if ( ev.windowID == windowID and ev.button == s.SDL_BUTTON_LEFT ) {
                             s.setMouseConfinedToWindow( window, false );
-                            mouseFrac = getPixelFrac( &axis, ev.x, ev.y );
+                            mouseFrac = lpxToAxisFrac( &axis, ev.x, ev.y, frameSize.xDpr, frameSize.yDpr );
                             if ( dragger != null ) {
                                 dragger.?.handleRelease( &axis, mouseFrac );
                                 dragger = null;

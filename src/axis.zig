@@ -178,12 +178,21 @@ pub const Axis2 = struct {
     }
 };
 
-pub fn getPixelFrac( axis: *const Axis2, x: c_int, y: c_int ) Vec2 {
-    // TODO: Adjust coords for HiDPI
+/// Convert from pixel coordinates to axis-frac coordinates.
+pub fn lpxToAxisFrac( axis: *const Axis2, x_LPX: c_int, y_LPX: c_int, xDpr: f64, yDpr: f64 ) Vec2 {
+    // Adjust coords for Device Pixel Ratio
+    // TODO: Is there a way to test this without a hidpi monitor?
+    const x_PX = @intToFloat( f64, x_LPX ) * xDpr;
+    const y_PX = @intToFloat( f64, y_LPX ) * yDpr;
+
     // Add 0.5 to get the center of the pixel
-    const coord_PX = xy( @intToFloat( f64, x ) + 0.5, @intToFloat( f64, y ) + 0.5 );
+    const coord_PX = xy( x_PX + 0.5, y_PX + 0.5 );
+
+    // Convert to axis-frac
     var frac = axis.getViewport_PX( ).valueToFrac( coord_PX );
-    // Invert so y increases upward
+
+    // Invert y so it increases upward
     frac.y = 1.0 - frac.y;
+
     return frac;
 }

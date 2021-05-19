@@ -1,6 +1,6 @@
 const u = @import( "util.zig" );
-const Interval1 = u.Interval1;
 const Interval2 = u.Interval2;
+const xywh = u.xywh;
 pub usingnamespace @cImport( {
     @cInclude( "SDL2/SDL.h" );
 } );
@@ -54,22 +54,35 @@ pub fn fromBool( b: bool ) SDL_bool {
     return @intToEnum( SDL_bool, if ( b ) SDL_TRUE else SDL_FALSE );
 }
 
-pub const Viewport = struct {
-    x_PX: c_int,
-    y_PX: c_int,
+pub const FrameSize = struct {
+    /// Size in logical pixels (aka screen coordinates)
+    w_LPX: c_int,
+
+    /// Height in logical pixels (aka screen coordinates)
+    h_LPX: c_int,
+
+    /// Width in physical pixels
     w_PX: c_int,
+
+    /// Height in physical pixels
     h_PX: c_int,
 
-    pub fn asInterval_PX( self: *const Viewport ) Interval2 {
-        return Interval2 {
-            .x = Interval1.create( @intToFloat( f64, self.x_PX ), @intToFloat( f64, self.w_PX ) ),
-            .y = Interval1.create( @intToFloat( f64, self.y_PX ), @intToFloat( f64, self.h_PX ) ),
-        };
+    /// Device Pixel Ratio in horizontal direction
+    xDpr: f64,
+
+    /// Device Pixel Ratio in vertical direction
+    yDpr: f64,
+
+    pub fn asViewport_PX( self: *const FrameSize ) Interval2 {
+        return xywh( 0, 0, @intToFloat( f64, self.w_PX ), @intToFloat( f64, self.h_PX ) );
     }
 };
 
-pub fn getViewport( window: *SDL_Window ) Viewport {
-    var viewport = Viewport { .x_PX = 0, .y_PX = 0, .w_PX = 0, .h_PX = 0 };
-    SDL_GL_GetDrawableSize( window, &viewport.w_PX, &viewport.h_PX );
-    return viewport;
+pub fn getFrameSize( window: *SDL_Window ) FrameSize {
+    var result: FrameSize = undefined;
+    SDL_GetWindowSize( window, &result.w_LPX, &result.h_LPX );
+    SDL_GL_GetDrawableSize( window, &result.w_PX, &result.h_PX );
+    result.xDpr = @intToFloat( f64, result.w_PX ) / @intToFloat( f64, result.w_LPX );
+    result.yDpr = @intToFloat( f64, result.h_PX ) / @intToFloat( f64, result.h_LPX );
+    return result;
 }
