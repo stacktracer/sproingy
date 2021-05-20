@@ -287,7 +287,6 @@ pub const DummyPaintable = struct {
 
     fn painterInit( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
-        print( "    Dummy INIT\n", .{} );
 
         try self.prog.init( );
 
@@ -371,7 +370,6 @@ const Model = struct {
 };
 
 fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
-    print( "  BUTTON_PRESS: {}\n", .{ ev.* } );
     if ( model.dragger == null and ev.button == 1 ) {
         // Add 0.5 to get pixel center
         const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
@@ -385,7 +383,6 @@ fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callc
 }
 
 fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.C) gboolean {
-    print( "        MOTION: {}\n", .{ ev.* } );
     if ( model.dragger != null ) {
         // Add 0.5 to get pixel center
         const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
@@ -396,7 +393,6 @@ fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.
 }
 
 fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
-    print( "BUTTON_RELEASE: {}\n", .{ ev.* } );
     if ( model.dragger != null and ev.button == 1 ) {
         // Add 0.5 to get pixel center
         const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
