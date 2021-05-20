@@ -221,16 +221,23 @@ const DummyProgram = struct {
 pub const DummyPaintable = struct {
     painter: Painter,
 
-    vao: GLuint,
+    vCoords: ArrayList( GLfloat ),
+    vCoordsModified: bool,
+
+    prog: DummyProgram,
     vbo: GLuint,
     vCount: GLsizei,
-    prog: DummyProgram,
+    vao: GLuint,
 
-    pub fn init( self: *DummyPaintable ) void {
-        self.vao = 0;
+    pub fn init( self: *DummyPaintable, allocator: *Allocator ) void {
+        self.vCoords = ArrayList( GLfloat ).init( allocator );
+        self.vCoordsModified = true;
+
+        self.prog = undefined;
         self.vbo = 0;
         self.vCount = 0;
-        self.prog = undefined;
+        self.vao = 0;
+
         self.painter = Painter {
             .initFn = painterInit,
             .paintFn = painterPaint,
@@ -242,19 +249,10 @@ pub const DummyPaintable = struct {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
         print( "    Dummy INIT\n", .{} );
 
-        const vCoords = [_]GLfloat {
-            0.0, 0.0,
-            0.5, 0.0,
-            0.0, 0.5,
-        };
+        try self.prog.init( );
+
         glGenBuffers( 1, &self.vbo );
         glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
-        self.vCount = @divTrunc( vCoords.len, 2 );
-        if ( self.vCount > 0 ) {
-            glBufferData( GL_ARRAY_BUFFER, 2*self.vCount*@sizeOf( GLfloat ), @ptrCast( *const c_void, &vCoords ), GL_STATIC_DRAW );
-        }
-
-        try self.prog.init( );
 
         glGenVertexArrays( 1, &self.vao );
         glBindVertexArray( self.vao );
@@ -265,6 +263,15 @@ pub const DummyPaintable = struct {
     fn painterPaint( painter: *Painter ) !void {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
         print( "   Dummy PAINT\n", .{} );
+
+        if ( self.vCoordsModified ) {
+            self.vCount = @intCast( GLsizei, @divTrunc( self.vCoords.items.len, 2 ) );
+            if ( self.vCount > 0 ) {
+                glBufferData( GL_ARRAY_BUFFER, 2*self.vCount*@sizeOf( GLfloat ), @ptrCast( *const c_void, self.vCoords.items.ptr ), GL_STATIC_DRAW );
+            }
+            self.vCoordsModified = false;
+        }
+
         if ( self.vCount > 0 ) {
             glBindVertexArray( self.vao );
 
@@ -284,6 +291,7 @@ pub const DummyPaintable = struct {
     fn painterDeinit( painter: *Painter ) void {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
         print( "  Dummy DEINIT\n", .{} );
+        self.vCoords.deinit( );
         glDeleteProgram( self.prog.program );
         glDeleteVertexArrays( 1, &self.vao );
         glDeleteBuffers( 1, &self.vbo );
@@ -411,8 +419,12 @@ pub fn main( ) !void {
 
     var model = try gpa.allocator.create( Model );
     model.init( &gpa.allocator );
+
+    var dummyCoords = [_]GLfloat { -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
     var dummyPaintable = try model.paintable.addChild( DummyPaintable );
-    dummyPaintable.init( );
+    dummyPaintable.init( &gpa.allocator );
+    try dummyPaintable.vCoords.appendSlice( &dummyCoords );
+    dummyPaintable.vCoordsModified = true;
 
     // FIXME: What all do we need to dispose of at the end?
     // FIXME: Pass a destroy_data closure?
