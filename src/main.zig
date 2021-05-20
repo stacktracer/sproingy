@@ -446,6 +446,10 @@ fn onActivate( app: *GtkApplication, model: *Model ) callconv(.C) void {
     gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
     gtk_widget_set_can_focus( glArea, 1 );
 
+    // TODO: The following didn't seem to do anything
+    // var err = g_error_new_literal( g_quark_from_static_string( "GDK_GL_ERROR" ), GDK_GL_ERROR_NOT_AVAILABLE, "Test" );
+    // gtk_gl_area_set_error( @ptrCast( *GtkGLArea, glArea ), err );
+
     model.widgetsToRepaint.append( glArea ) catch {
         // FIXME: Don't panic
         panic( "Failed to connect 'render' handler", .{} );
