@@ -441,13 +441,10 @@ fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, model: *Model ) callc
 }
 
 fn onActivate( app: *GtkApplication, model: *Model ) callconv(.C) void {
-    const window = gtk_application_window_new( app );
-
     const glArea = gtk_gl_area_new( );
     gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
-    gtk_widget_set_events( @ptrCast( *GtkWidget, glArea ), GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
-    gtk_widget_set_can_focus( @ptrCast( *GtkWidget, glArea ), 1 );
-    gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
+    gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
+    gtk_widget_set_can_focus( glArea, 1 );
 
     model.widgetsToRepaint.append( glArea ) catch {
         // FIXME: Don't panic
@@ -496,6 +493,8 @@ fn onActivate( app: *GtkApplication, model: *Model ) callconv(.C) void {
         panic( "Failed to connect 'key-release' handler", .{} );
     }
 
+    const window = gtk_application_window_new( app );
+    gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
     gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Dummy" );
     gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 800, 600 );
     gtk_widget_show_all( window );
@@ -533,6 +532,7 @@ pub fn main( ) !void {
         panic( "Failed to connect 'activate' handler", .{} );
     }
 
+    // TODO: Pass argc and argv somehow?
     const runResult = g_application_run( @ptrCast( *GApplication, app ), 0, null );
     if ( runResult != 0 ) {
         // FIXME: Don't panic
