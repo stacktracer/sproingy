@@ -4,7 +4,11 @@ const panic = std.debug.panic;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const u = @import( "util.zig" );
+const Interval2 = u.Interval2;
+const xy = u.xy;
 const xywh = u.xywh;
+const a = @import( "axis.zig" );
+const Axis2 = a.Axis2;
 usingnamespace @import( "glz.zig" );
 usingnamespace @cImport( {
     @cInclude( "epoxy/gl.h" );
@@ -68,16 +72,16 @@ const GdkEventKey_WORKAROUND = extern struct {
 pub const Painter = struct {
     needsInit: bool = true,
 
-    initFn: fn ( self: *Painter ) anyerror!void,
-    paintFn: fn ( self: *Painter ) anyerror!void,
+    initFn: fn ( self: *Painter, viewport_PX: Interval2 ) anyerror!void,
+    paintFn: fn ( self: *Painter, viewport_PX: Interval2 ) anyerror!void,
     deinitFn: fn ( self: *Painter ) void,
 
-    pub fn paint( self: *Painter ) !void {
+    pub fn paint( self: *Painter, viewport_PX: Interval2 ) !void {
         if ( self.needsInit ) {
-            try self.initFn( self );
+            try self.initFn( self, viewport_PX );
             self.needsInit = false;
         }
-        return self.paintFn( self );
+        return self.paintFn( self, viewport_PX );
     }
 
     pub fn deinit( self: *Painter ) void {
@@ -112,15 +116,14 @@ pub const MultiPaintable = struct {
         return childPaintable;
     }
 
-    fn painterInit( painter: *Painter ) !void {
-        const self = @fieldParentPtr( MultiPaintable, "painter", painter );
+    fn painterInit( painter: *Painter, viewport_PX: Interval2 ) !void {
         // Do nothing
     }
 
-    fn painterPaint( painter: *Painter ) !void {
+    fn painterPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( MultiPaintable, "painter", painter );
         for ( self.childPainters.items ) |childPainter| {
-            try childPainter.paint( );
+            try childPainter.paint( viewport_PX );
         }
     }
 
@@ -156,11 +159,11 @@ pub const ClearPaintable = struct {
         };
     }
 
-    fn painterInit( painter: *Painter ) !void {
+    fn painterInit( painter: *Painter, viewport_PX: Interval2 ) !void {
         // Do nothing
     }
 
-    fn painterPaint( painter: *Painter ) !void {
+    fn painterPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( ClearPaintable, "painter", painter );
         glClearColor( self.rgba[0], self.rgba[1], self.rgba[2], self.rgba[3] );
         glClear( self.mask );
@@ -251,6 +254,8 @@ const DummyProgram = struct {
 pub const DummyPaintable = struct {
     painter: Painter,
 
+    axis: *Axis2,
+
     vCoords: ArrayList( GLfloat ),
     vCoordsModified: bool,
 
@@ -259,7 +264,9 @@ pub const DummyPaintable = struct {
     vCount: GLsizei,
     vao: GLuint,
 
-    pub fn init( self: *DummyPaintable, allocator: *Allocator ) void {
+    pub fn init( self: *DummyPaintable, allocator: *Allocator, axis: *Axis2 ) void {
+        self.axis = axis;
+
         self.vCoords = ArrayList( GLfloat ).init( allocator );
         self.vCoordsModified = true;
 
@@ -275,7 +282,7 @@ pub const DummyPaintable = struct {
         };
     }
 
-    fn painterInit( painter: *Painter ) !void {
+    fn painterInit( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
         print( "    Dummy INIT\n", .{} );
 
@@ -290,9 +297,8 @@ pub const DummyPaintable = struct {
         glVertexAttribPointer( self.prog.inCoords, 2, GL_FLOAT, GL_FALSE, 0, null );
     }
 
-    fn painterPaint( painter: *Painter ) !void {
+    fn painterPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
-        print( "   Dummy PAINT\n", .{} );
 
         if ( self.vCoordsModified ) {
             self.vCount = @intCast( GLsizei, @divTrunc( self.vCoords.items.len, 2 ) );
@@ -303,10 +309,9 @@ pub const DummyPaintable = struct {
         }
 
         if ( self.vCount > 0 ) {
-            glBindVertexArray( self.vao );
+            const bounds = self.axis.getBounds( );
 
-            // FIXME
-            const bounds = xywh( -1, -1, 2, 2 );
+            glzEnablePremultipliedAlphaBlending( );
 
             glEnable( GL_VERTEX_PROGRAM_POINT_SIZE );
             glUseProgram( self.prog.program );
@@ -314,6 +319,7 @@ pub const DummyPaintable = struct {
             glUniform1f( self.prog.SIZE_PX, 15 );
             glUniform4f( self.prog.RGBA, 1.0, 0.0, 0.0, 1.0 );
 
+            glBindVertexArray( self.vao );
             glDrawArrays( GL_POINTS, 0, self.vCount );
         }
     }
@@ -330,16 +336,16 @@ pub const DummyPaintable = struct {
 
 const Model = struct {
     allocator: *Allocator,
-    // axis: Axis2,
     paintable: MultiPaintable,
     // mouseFrac: Vec2,
     // draggables: []Draggable,
     // dragger: ?*Dragger,
+    axis: Axis2,
 
     pub fn init( self: *Model, allocator: *Allocator ) void {
         self.allocator = allocator;
-        // self.axis = asdf;
         self.paintable.init( allocator );
+        self.axis = Axis2.create( xywh( 0, 0, 500, 500 ) );
     }
 
     pub fn deinit( self: *Model ) void {
@@ -378,10 +384,9 @@ fn onKeyRelease( widget: *GtkWidget, ev: *GdkEventKey_WORKAROUND, model: *Model 
 }
 
 fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, model: *Model ) callconv(.C) gboolean {
-    // const viewport_PX: [4]c_int = &undefined;
-    // glGetIntegerv( GL_VIEWPORT, viewport_PX, 0 );
-    print( "        RENDER\n", .{} );
-    model.paintable.painter.paint( ) catch {
+    const viewport_PX = glzGetViewport_PX( );
+    model.axis.setViewport_PX( viewport_PX );
+    model.paintable.painter.paint( viewport_PX ) catch {
         // FIXME: Don't panic
         panic( "Failed to paint", .{} );
     };
@@ -449,6 +454,7 @@ pub fn main( ) !void {
 
     var model = try gpa.allocator.create( Model );
     model.init( &gpa.allocator );
+    model.axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 200, 200 ) );
 
     var bgPaintable = try model.paintable.addChild( ClearPaintable );
     bgPaintable.init( );
@@ -456,8 +462,8 @@ pub fn main( ) !void {
     bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
 
     var dummyPaintable = try model.paintable.addChild( DummyPaintable );
-    dummyPaintable.init( &gpa.allocator );
-    var dummyCoords = [_]GLfloat { -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
+    dummyPaintable.init( &gpa.allocator, &model.axis );
+    var dummyCoords = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
     try dummyPaintable.vCoords.appendSlice( &dummyCoords );
     dummyPaintable.vCoordsModified = true;
 

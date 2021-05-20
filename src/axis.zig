@@ -66,12 +66,6 @@ pub const Axis1 = struct {
         self.scale = scale;
     }
 
-    pub fn setBounds( self: *Axis1, bounds: Interval1 ) void {
-        // TODO: Apply constraints
-        self.tieCoord = bounds.fracToValue( self.tieFrac );
-        self.scale = self.viewport_PX.span / bounds.span;
-    }
-
     pub fn getBounds( self: *const Axis1 ) Interval1 {
         const span = self.viewport_PX.span / self.scale;
         const min = self.tieCoord - self.tieFrac*span;
@@ -122,11 +116,6 @@ pub const Axis2 = struct {
     panner: Axis2Panner,
     draggable: Draggable,
 
-    pub fn getDragger( draggable: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
-        const self = @fieldParentPtr( Axis2, "draggable", draggable );
-        return &self.panner.dragger;
-    }
-
     pub fn create( viewport_PX: Interval2 ) Axis2 {
         return Axis2 {
             .x = Axis1.create( viewport_PX.x ),
@@ -136,6 +125,11 @@ pub const Axis2 = struct {
                 .getDraggerImpl = getDragger,
             },
         };
+    }
+
+    fn getDragger( draggable: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
+        const self = @fieldParentPtr( Axis2, "draggable", draggable );
+        return &self.panner.dragger;
     }
 
     pub fn setViewport_PX( self: *Axis2, viewport_PX: Interval2 ) void {
@@ -161,12 +155,6 @@ pub const Axis2 = struct {
         // TODO: Not sure this will work well with axis constraints
         self.x.set( frac.x, coord.x, scale.x );
         self.y.set( frac.y, coord.y, scale.y );
-    }
-
-    pub fn setBounds( self: *Axis2, bounds: Interval2 ) void {
-        // TODO: Not sure this will work well with axis constraints
-        self.x.setBounds( bounds.x );
-        self.y.setBounds( bounds.y );
     }
 
     // TODO: Maybe don't return by value?

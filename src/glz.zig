@@ -1,6 +1,7 @@
 const std = @import( "std" );
 const u = @import( "util.zig" );
 const Interval2 = u.Interval2;
+const xywh = u.xywh;
 const cAllocator = std.heap.c_allocator;
 usingnamespace @cImport( {
     @cInclude( "epoxy/gl.h" );
@@ -81,4 +82,10 @@ pub fn glzUniformInterval2( location: GLint, interval: Interval2 ) void {
                  @floatCast( f32, interval.y.min ),
                  @floatCast( f32, interval.x.span ),
                  @floatCast( f32, interval.y.span ) );
+}
+
+pub fn glzGetViewport_PX( ) Interval2 {
+    var viewport_PX: [4]GLint = undefined;
+    glGetIntegerv( GL_VIEWPORT, &viewport_PX );
+    return xywh( @intToFloat( f64, viewport_PX[0] ), @intToFloat( f64, viewport_PX[1] ), @intToFloat( f64, viewport_PX[2] ), @intToFloat( f64, viewport_PX[3] ) );
 }
