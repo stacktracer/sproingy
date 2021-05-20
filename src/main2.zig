@@ -141,6 +141,36 @@ pub const MultiPaintable = struct {
 };
 
 
+pub const ClearPaintable = struct {
+    painter: Painter,
+    mask: GLbitfield,
+    rgba: [4]GLfloat,
+
+    pub fn init( self: *ClearPaintable ) void {
+        self.mask = GL_COLOR_BUFFER_BIT;
+        self.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
+        self.painter = Painter {
+            .initFn = painterInit,
+            .paintFn = painterPaint,
+            .deinitFn = painterDeinit,
+        };
+    }
+
+    fn painterInit( painter: *Painter ) !void {
+        // Do nothing
+    }
+
+    fn painterPaint( painter: *Painter ) !void {
+        const self = @fieldParentPtr( ClearPaintable, "painter", painter );
+        glClearColor( self.rgba[0], self.rgba[1], self.rgba[2], self.rgba[3] );
+        glClear( self.mask );
+    }
+
+    fn painterDeinit( painter: *Painter ) void {
+        // Do nothing
+    }
+};
+
 const DummyProgram = struct {
     program: GLuint,
 
@@ -420,9 +450,14 @@ pub fn main( ) !void {
     var model = try gpa.allocator.create( Model );
     model.init( &gpa.allocator );
 
-    var dummyCoords = [_]GLfloat { -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
+    var bgPaintable = try model.paintable.addChild( ClearPaintable );
+    bgPaintable.init( );
+    bgPaintable.mask = GL_COLOR_BUFFER_BIT;
+    bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
+
     var dummyPaintable = try model.paintable.addChild( DummyPaintable );
     dummyPaintable.init( &gpa.allocator );
+    var dummyCoords = [_]GLfloat { -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
     try dummyPaintable.vCoords.appendSlice( &dummyCoords );
     dummyPaintable.vCoordsModified = true;
 
