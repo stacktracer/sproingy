@@ -1,22 +1,21 @@
 const std = @import( "std" );
-const warn = std.debug.warn;
 const u = @import( "util.zig" );
 const Interval2 = u.Interval2;
 const cAllocator = std.heap.c_allocator;
-pub usingnamespace @cImport( {
+usingnamespace @cImport( {
     @cInclude( "epoxy/gl.h" );
 } );
 
-const Error = error {
+const GlzError = error {
     GenericFailure,
 };
 
 // TODO: Maybe take an allocator arg, but only if we're going to have an allocator handy for other purposes
-pub fn createProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) !GLuint {
-    const vertShader = try compileShaderSource( GL_VERTEX_SHADER, vertSource );
+pub fn glzCreateProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) !GLuint {
+    const vertShader = try glzCompileShaderSource( GL_VERTEX_SHADER, vertSource );
     defer glDeleteShader( vertShader );
 
-    const fragShader = try compileShaderSource( GL_FRAGMENT_SHADER, fragSource );
+    const fragShader = try glzCompileShaderSource( GL_FRAGMENT_SHADER, fragSource );
     defer glDeleteShader( fragShader );
 
     const program = glCreateProgram( );
@@ -37,15 +36,15 @@ pub fn createProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) !GL
         const message = try cAllocator.alloc( u8, @intCast( usize, messageSize ) );
         defer cAllocator.free( message );
         glGetProgramInfoLog( program, messageSize, null, message.ptr );
-        warn( "Shader linking failed:\n{s}\n", .{ message } );
+        std.debug.warn( "Shader linking failed:\n{s}\n", .{ message } );
         // TODO: Make message available to caller
-        return Error.GenericFailure;
+        return GlzError.GenericFailure;
     }
 
     return program;
 }
 
-pub fn compileShaderSource( shaderType: GLenum, source: [*:0]const u8 ) !GLuint {
+pub fn glzCompileShaderSource( shaderType: GLenum, source: [*:0]const u8 ) !GLuint {
     const shader = glCreateShader( shaderType );
     glShaderSource( shader, 1, &source, null );
     glCompileShader( shader );
@@ -58,25 +57,25 @@ pub fn compileShaderSource( shaderType: GLenum, source: [*:0]const u8 ) !GLuint 
         const message = try cAllocator.alloc( u8, @intCast( usize, messageSize ) );
         defer cAllocator.free( message );
         glGetShaderInfoLog( shader, messageSize, null, message.ptr );
-        warn( "Shader compilation failed:\n{s}\n", .{ message } );
+        std.debug.warn( "Shader compilation failed:\n{s}\n", .{ message } );
         // TODO: Make message available to caller
-        return Error.GenericFailure;
+        return GlzError.GenericFailure;
     }
 
     return shader;
 }
 
-pub fn enablePremultipliedAlphaBlending( ) void {
+pub fn glzEnablePremultipliedAlphaBlending( ) void {
     glBlendEquation( GL_FUNC_ADD );
     glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
     glEnable( GL_BLEND );
 }
 
-pub fn disableBlending( ) void {
+pub fn glzdisableBlending( ) void {
     glDisable( GL_BLEND );
 }
 
-pub fn glUniformInterval2( location: GLint, interval: Interval2 ) void {
+pub fn glzUniformInterval2( location: GLint, interval: Interval2 ) void {
     glUniform4f( location,
                  @floatCast( f32, interval.x.min ),
                  @floatCast( f32, interval.y.min ),

@@ -3,8 +3,10 @@ const print = std.debug.print;
 const panic = std.debug.panic;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
-
-pub usingnamespace @cImport( {
+const u = @import( "util.zig" );
+const xywh = u.xywh;
+usingnamespace @import( "glz.zig" );
+usingnamespace @cImport( {
     @cInclude( "epoxy/gl.h" );
     @cInclude( "gtk/gtk.h" );
 } );
@@ -86,10 +88,11 @@ pub const Painter = struct {
 pub const Paintable = opaque {};
 
 pub const MultiPaintable = struct {
+    painter: Painter,
+
     allocator: *Allocator,
     childPaintables: ArrayList( *Paintable ),
     childPainters: ArrayList( *Painter ),
-    painter: Painter,
 
     pub fn init( self: *MultiPaintable, allocator: *Allocator ) void {
         self.allocator = allocator;
@@ -138,13 +141,96 @@ pub const MultiPaintable = struct {
 };
 
 
+const DummyProgram = struct {
+    program: GLuint,
+
+    XY_BOUNDS: GLint,
+    SIZE_PX: GLint,
+    RGBA: GLint,
+
+    /// x_XAXIS, y_YAXIS
+    inCoords: GLuint,
+
+    /// Must be called while the appropriate GL context is current
+    pub fn init( self: *DummyProgram ) !void {
+        const vertSource =
+            \\#version 150 core
+            \\
+            \\vec2 min2D( vec4 interval2D )
+            \\{
+            \\    return interval2D.xy;
+            \\}
+            \\
+            \\vec2 span2D( vec4 interval2D )
+            \\{
+            \\    return interval2D.zw;
+            \\}
+            \\
+            \\vec2 coordsToNdc2D( vec2 coords, vec4 bounds )
+            \\{
+            \\    vec2 frac = ( coords - min2D( bounds ) ) / span2D( bounds );
+            \\    return ( -1.0 + 2.0*frac );
+            \\}
+            \\
+            \\uniform vec4 XY_BOUNDS;
+            \\uniform float SIZE_PX;
+            \\
+            \\// x_XAXIS, y_YAXIS
+            \\in vec2 inCoords;
+            \\
+            \\void main( void ) {
+            \\    vec2 xy_XYAXIS = inCoords.xy;
+            \\    gl_Position = vec4( coordsToNdc2D( xy_XYAXIS, XY_BOUNDS ), 0.0, 1.0 );
+            \\    gl_PointSize = SIZE_PX;
+            \\}
+        ;
+
+        const fragSource =
+            \\#version 150 core
+            \\precision lowp float;
+            \\
+            \\const float FEATHER_PX = 0.9;
+            \\
+            \\uniform float SIZE_PX;
+            \\uniform vec4 RGBA;
+            \\
+            \\out vec4 outRgba;
+            \\
+            \\void main( void ) {
+            \\    vec2 xy_NPC = -1.0 + 2.0*gl_PointCoord;
+            \\    float r_NPC = sqrt( dot( xy_NPC, xy_NPC ) );
+            \\
+            \\    float pxToNpc = 2.0 / SIZE_PX;
+            \\    float rOuter_NPC = 1.0 - 0.5*pxToNpc;
+            \\    float rInner_NPC = rOuter_NPC - FEATHER_PX*pxToNpc;
+            \\    float mask = smoothstep( rOuter_NPC, rInner_NPC, r_NPC );
+            \\
+            \\    float alpha = mask * RGBA.a;
+            \\    outRgba = vec4( alpha*RGBA.rgb, alpha );
+            \\}
+        ;
+
+        self.program = try glzCreateProgram( vertSource, fragSource );
+        self.XY_BOUNDS = glGetUniformLocation( self.program, "XY_BOUNDS" );
+        self.SIZE_PX = glGetUniformLocation( self.program, "SIZE_PX" );
+        self.RGBA = glGetUniformLocation( self.program, "RGBA" );
+        self.inCoords = @intCast( GLuint, glGetAttribLocation( self.program, "inCoords" ) );
+    }
+};
+
 pub const DummyPaintable = struct {
     painter: Painter,
-    // vao: GLuint,
-    // dVertexCoords: GLuint,
-    // dProgram: DummyProgram,
+
+    vao: GLuint,
+    vbo: GLuint,
+    vCount: GLsizei,
+    prog: DummyProgram,
 
     pub fn init( self: *DummyPaintable ) void {
+        self.vao = 0;
+        self.vbo = 0;
+        self.vCount = 0;
+        self.prog = undefined;
         self.painter = Painter {
             .initFn = painterInit,
             .paintFn = painterPaint,
@@ -155,16 +241,52 @@ pub const DummyPaintable = struct {
     fn painterInit( painter: *Painter ) !void {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
         print( "    Dummy INIT\n", .{} );
+
+        const vCoords = [_]GLfloat {
+            0.0, 0.0,
+            0.5, 0.0,
+            0.0, 0.5,
+        };
+        glGenBuffers( 1, &self.vbo );
+        glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
+        self.vCount = @divTrunc( vCoords.len, 2 );
+        if ( self.vCount > 0 ) {
+            glBufferData( GL_ARRAY_BUFFER, 2*self.vCount*@sizeOf( GLfloat ), @ptrCast( *const c_void, &vCoords ), GL_STATIC_DRAW );
+        }
+
+        try self.prog.init( );
+
+        glGenVertexArrays( 1, &self.vao );
+        glBindVertexArray( self.vao );
+        glEnableVertexAttribArray( self.prog.inCoords );
+        glVertexAttribPointer( self.prog.inCoords, 2, GL_FLOAT, GL_FALSE, 0, null );
     }
 
     fn painterPaint( painter: *Painter ) !void {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
         print( "   Dummy PAINT\n", .{} );
+        if ( self.vCount > 0 ) {
+            glBindVertexArray( self.vao );
+
+            // FIXME
+            const bounds = xywh( -1, -1, 2, 2 );
+
+            glEnable( GL_VERTEX_PROGRAM_POINT_SIZE );
+            glUseProgram( self.prog.program );
+            glzUniformInterval2( self.prog.XY_BOUNDS, bounds );
+            glUniform1f( self.prog.SIZE_PX, 15 );
+            glUniform4f( self.prog.RGBA, 1.0, 0.0, 0.0, 1.0 );
+
+            glDrawArrays( GL_POINTS, 0, self.vCount );
+        }
     }
 
     fn painterDeinit( painter: *Painter ) void {
         const self = @fieldParentPtr( DummyPaintable, "painter", painter );
         print( "  Dummy DEINIT\n", .{} );
+        glDeleteProgram( self.prog.program );
+        glDeleteVertexArrays( 1, &self.vao );
+        glDeleteBuffers( 1, &self.vbo );
     }
 };
 
