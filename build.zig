@@ -5,7 +5,7 @@ pub fn build( b: *Builder ) void {
     // TODO: Does this default to debug mode, in spite of the "release" in there?
     const mode = b.standardReleaseOptions( );
 
-    const exe = b.addExecutable( "dummy", "src/main2.zig" );
+    const exe = b.addExecutable( "dummy", "src/main.zig" );
     exe.setBuildMode( mode );
     exe.addIncludeDir( "/usr/include" );
     exe.addIncludeDir( "/usr/include/GL" );
