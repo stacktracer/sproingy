@@ -8,6 +8,7 @@ pub fn build( b: *Builder ) void {
     const exe = b.addExecutable( "dummy", "src/main2.zig" );
     exe.setBuildMode( mode );
     exe.addIncludeDir( "/usr/include" );
+    exe.addIncludeDir( "/usr/include/GL" );
 
     // pkg-config --cflags gtk+-3.0
     exe.addIncludeDir( "/usr/include/gtk-3.0" );
@@ -32,6 +33,9 @@ pub fn build( b: *Builder ) void {
     exe.addIncludeDir( "/usr/lib/dbus-1.0/include" );
     exe.addIncludeDir( "/usr/include/at-spi-2.0" );
 
+    exe.linkSystemLibrary("c");
+    exe.linkSystemLibrary( "epoxy" );
+
     // pkg-config --libs gtk+-3.0
     exe.linkSystemLibrary( "gtk-3" );
     exe.linkSystemLibrary( "gdk-3" );
@@ -47,10 +51,6 @@ pub fn build( b: *Builder ) void {
     exe.linkSystemLibrary( "gobject-2.0" );
     exe.linkSystemLibrary( "glib-2.0" );
 
-    exe.addIncludeDir( "/usr/include/GL" );
-    exe.linkSystemLibrary("c");
-    //exe.linkSystemLibrary( "SDL2" );
-    exe.linkSystemLibrary( "epoxy" );
     exe.install( );
 
     b.default_step.dependOn( &exe.step );
