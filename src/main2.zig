@@ -12,6 +12,7 @@ const Axis2 = a.Axis2;
 const Draggable = a.Draggable;
 const Dragger = a.Dragger;
 const findDragger = a.findDragger;
+const pxToAxisFrac = a.pxToAxisFrac;
 usingnamespace @import( "glz.zig" );
 usingnamespace @cImport( {
     @cInclude( "epoxy/gl.h" );
@@ -404,7 +405,18 @@ fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) cal
 }
 
 fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll_WORKAROUND, model: *Model ) callconv(.C) gboolean {
-    print( "         WHEEL: {}\n", .{ ev.* } );
+    const zoomStepFactor = 1.12;
+    const zoomFactor: f64 = switch ( ev.direction ) {
+        .GDK_SCROLL_UP => zoomStepFactor,
+        .GDK_SCROLL_DOWN => 1.0 / zoomStepFactor,
+        else => 0.0,
+    };
+    const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
+    const mouse_FRAC = pxToAxisFrac( &model.axis, mouse_PX );
+    const mouse_XY = model.axis.getBounds( ).fracToValue( mouse_FRAC );
+    const scale = xy( zoomFactor*model.axis.x.scale, zoomFactor*model.axis.y.scale );
+    model.axis.set( mouse_FRAC, mouse_XY, scale );
+    model.fireRepaint( );
     return 1;
 }
 
