@@ -9,6 +9,9 @@ const xy = u.xy;
 const xywh = u.xywh;
 const a = @import( "axis.zig" );
 const Axis2 = a.Axis2;
+const Draggable = a.Draggable;
+const Dragger = a.Dragger;
+const findDragger = a.findDragger;
 usingnamespace @import( "glz.zig" );
 usingnamespace @cImport( {
     @cInclude( "epoxy/gl.h" );
@@ -337,34 +340,70 @@ pub const DummyPaintable = struct {
 const Model = struct {
     allocator: *Allocator,
     paintable: MultiPaintable,
-    // mouseFrac: Vec2,
-    // draggables: []Draggable,
-    // dragger: ?*Dragger,
+    draggables: ArrayList( *Draggable ),
+    dragger: ?*Dragger,
     axis: Axis2,
+
+    // TODO: Would be nice to have a listenable here instead
+    widgetsToRepaint: ArrayList( *GtkWidget ),
 
     pub fn init( self: *Model, allocator: *Allocator ) void {
         self.allocator = allocator;
         self.paintable.init( allocator );
+        self.draggables = ArrayList( *Draggable ).init( allocator );
+        self.dragger = null;
         self.axis = Axis2.create( xywh( 0, 0, 500, 500 ) );
+        self.widgetsToRepaint = ArrayList( *GtkWidget ).init( allocator );
     }
 
     pub fn deinit( self: *Model ) void {
         self.paintable.deinit( );
+        self.dragger = null;
+        self.draggables.deinit( );
+        self.widgetsToRepaint.deinit( );
+    }
+
+    pub fn fireRepaint( self: *Model ) void {
+        for ( self.widgetsToRepaint.items ) |widget| {
+            gtk_widget_queue_draw( widget );
+        }
     }
 };
 
-fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.C) gboolean {
-    print( "        MOTION: {}\n", .{ ev.* } );
+fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
+    print( "  BUTTON_PRESS: {}\n", .{ ev.* } );
+    if ( model.dragger == null and ev.button == 1 ) {
+        // Add 0.5 to get pixel center
+        const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
+        model.dragger = findDragger( model.draggables.items, mouse_PX );
+        if ( model.dragger != null ) {
+            model.dragger.?.handlePress( mouse_PX );
+            model.fireRepaint( );
+        }
+    }
     return 1;
 }
 
-fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
-    print( "  BUTTON_PRESS: {}\n", .{ ev.* } );
+fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.C) gboolean {
+    print( "        MOTION: {}\n", .{ ev.* } );
+    if ( model.dragger != null ) {
+        // Add 0.5 to get pixel center
+        const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
+        model.dragger.?.handleDrag( mouse_PX );
+        model.fireRepaint( );
+    }
     return 1;
 }
 
 fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
     print( "BUTTON_RELEASE: {}\n", .{ ev.* } );
+    if ( model.dragger != null and ev.button == 1 ) {
+        // Add 0.5 to get pixel center
+        const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
+        model.dragger.?.handleDrag( mouse_PX );
+        model.dragger = null;
+        model.fireRepaint( );
+    }
     return 1;
 }
 
@@ -401,6 +440,11 @@ fn onActivate( app: *GtkApplication, model: *Model ) callconv(.C) void {
     gtk_widget_set_events( @ptrCast( *GtkWidget, glArea ), GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
     gtk_widget_set_can_focus( @ptrCast( *GtkWidget, glArea ), 1 );
     gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
+
+    model.widgetsToRepaint.append( glArea ) catch {
+        // FIXME: Don't panic
+        panic( "Failed to connect 'render' handler", .{} );
+    };
 
     const renderHandlerId = g_signal_connect_data( glArea, "render", @ptrCast( GCallback, onRender ), model, null, G_CONNECT_FLAGS_NONE );
     if ( renderHandlerId == 0 ) {
@@ -455,6 +499,7 @@ pub fn main( ) !void {
     var model = try gpa.allocator.create( Model );
     model.init( &gpa.allocator );
     model.axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 200, 200 ) );
+    try model.draggables.append( &model.axis.draggable );
 
     var bgPaintable = try model.paintable.addChild( ClearPaintable );
     bgPaintable.init( );

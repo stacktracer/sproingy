@@ -7,34 +7,34 @@ const Interval1 = u.Interval1;
 const Interval2 = u.Interval2;
 
 pub const Dragger = struct {
-    handlePressImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
-    handleDragImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
-    handleReleaseImpl: fn ( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void,
+    handlePressFn: fn ( self: *Dragger, mouse_PX: Vec2 ) void,
+    handleDragFn: fn ( self: *Dragger, mouse_PX: Vec2 ) void,
+    handleReleaseFn: fn ( self: *Dragger, mouse_PX: Vec2 ) void,
 
-    pub fn handlePress( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        self.handlePressImpl( self, axis, mouseFrac );
+    pub fn handlePress( self: *Dragger, mouse_PX: Vec2 ) void {
+        self.handlePressFn( self, mouse_PX );
     }
 
-    pub fn handleDrag( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        self.handleDragImpl( self, axis, mouseFrac );
+    pub fn handleDrag( self: *Dragger, mouse_PX: Vec2 ) void {
+        self.handleDragFn( self, mouse_PX );
     }
 
-    pub fn handleRelease( self: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        self.handleReleaseImpl( self, axis, mouseFrac );
+    pub fn handleRelease( self: *Dragger, mouse_PX: Vec2 ) void {
+        self.handleReleaseFn( self, mouse_PX );
     }
 };
 
 pub const Draggable = struct {
-    getDraggerImpl: fn ( self: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger,
+    getDraggerFn: fn ( self: *Draggable, mouse_PX: Vec2 ) ?*Dragger,
 
-    pub fn getDragger( self: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
-        return self.getDraggerImpl( self, axis, mouseFrac );
+    pub fn getDragger( self: *Draggable, mouse_PX: Vec2 ) ?*Dragger {
+        return self.getDraggerFn( self, mouse_PX );
     }
 };
 
-pub fn findDragger( draggables: []*Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
+pub fn findDragger( draggables: []const *Draggable, mouse_PX: Vec2 ) ?*Dragger {
     for ( draggables ) |draggable| {
-        const dragger = draggable.getDragger( axis, mouseFrac );
+        const dragger = draggable.getDragger( mouse_PX );
         if ( dragger != null ) {
             return dragger;
         }
@@ -76,60 +76,55 @@ pub const Axis1 = struct {
     }
 };
 
-pub const Axis2Panner = struct {
-    dragger: Dragger,
-    grabCoord: Vec2,
-
-    /// Pass this same axis to ensuing handleDrag and handleRelease calls
-    pub fn handlePress( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
-        self.grabCoord = axis.getBounds( ).fracToValue( mouseFrac );
-    }
-
-    /// Pass the same axis that was passed to the preceding handlePress call
-    pub fn handleDrag( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
-        axis.pan( mouseFrac, self.grabCoord );
-    }
-
-    /// Pass the same axis that was passed to the preceding handlePress call
-    pub fn handleRelease( dragger: *Dragger, axis: *Axis2, mouseFrac: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2Panner, "dragger", dragger );
-        axis.pan( mouseFrac, self.grabCoord );
-    }
-
-    pub fn create( ) Axis2Panner {
-        return Axis2Panner {
-            .grabCoord = xy( nan( f64 ), nan( f64 ) ),
-            .dragger = Dragger {
-                .handlePressImpl = handlePress,
-                .handleDragImpl = handleDrag,
-                .handleReleaseImpl = handleRelease,
-            },
-        };
-    }
-};
-
 pub const Axis2 = struct {
     x: Axis1,
     y: Axis1,
-    panner: Axis2Panner,
+
+    // FIXME: Try moving these back out of Axis2
+    grabCoord: Vec2,
+    dragger: Dragger,
     draggable: Draggable,
 
     pub fn create( viewport_PX: Interval2 ) Axis2 {
         return Axis2 {
             .x = Axis1.create( viewport_PX.x ),
             .y = Axis1.create( viewport_PX.y ),
-            .panner = Axis2Panner.create( ),
+            .grabCoord = undefined,
+            .dragger = Dragger {
+                .handlePressFn = handlePress,
+                .handleDragFn = handleDrag,
+                .handleReleaseFn = handleRelease,
+            },
             .draggable = Draggable {
-                .getDraggerImpl = getDragger,
+                .getDraggerFn = getDragger,
             },
         };
     }
 
-    fn getDragger( draggable: *Draggable, axis: *const Axis2, mouseFrac: Vec2 ) ?*Dragger {
+    /// Pass this same axis to ensuing handleDrag and handleRelease calls
+    fn handlePress( dragger: *Dragger, mouse_PX: Vec2 ) void {
+        const self = @fieldParentPtr( Axis2, "dragger", dragger );
+        const mouse_FRAC = pxToAxisFrac( self, mouse_PX );
+        self.grabCoord = self.getBounds( ).fracToValue( mouse_FRAC );
+    }
+
+    /// Pass the same axis that was passed to the preceding handlePress call
+    fn handleDrag( dragger: *Dragger, mouse_PX: Vec2 ) void {
+        const self = @fieldParentPtr( Axis2, "dragger", dragger );
+        const mouse_FRAC = pxToAxisFrac( self, mouse_PX );
+        self.pan( mouse_FRAC, self.grabCoord );
+    }
+
+    /// Pass the same axis that was passed to the preceding handlePress call
+    fn handleRelease( dragger: *Dragger, mouse_PX: Vec2 ) void {
+        const self = @fieldParentPtr( Axis2, "dragger", dragger );
+        const mouse_FRAC = pxToAxisFrac( self, mouse_PX );
+        self.pan( mouse_FRAC, self.grabCoord );
+    }
+
+    fn getDragger( draggable: *Draggable, mouse_PX: Vec2 ) ?*Dragger {
         const self = @fieldParentPtr( Axis2, "draggable", draggable );
-        return &self.panner.dragger;
+        return &self.dragger;
     }
 
     pub fn setViewport_PX( self: *Axis2, viewport_PX: Interval2 ) void {
@@ -166,21 +161,10 @@ pub const Axis2 = struct {
     }
 };
 
-/// Convert from pixel coordinates to axis-frac coordinates.
-pub fn lpxToAxisFrac( axis: *const Axis2, x_LPX: c_int, y_LPX: c_int, xDpr: f64, yDpr: f64 ) Vec2 {
-    // Adjust coords for Device Pixel Ratio
-    // TODO: Is there a way to test this without a hidpi monitor?
-    const x_PX = @intToFloat( f64, x_LPX ) * xDpr;
-    const y_PX = @intToFloat( f64, y_LPX ) * yDpr;
-
-    // Add 0.5 to get the center of the pixel
-    const coord_PX = xy( x_PX + 0.5, y_PX + 0.5 );
-
-    // Convert to axis-frac
-    var frac = axis.getViewport_PX( ).valueToFrac( coord_PX );
-
+// TODO: Test with hidpi (https://wiki.gnome.org/HowDoI/HiDpi/)
+pub fn pxToAxisFrac( axis: *const Axis2, xy_PX: Vec2 ) Vec2 {
     // Invert y so it increases upward
+    var frac = axis.getViewport_PX( ).valueToFrac( xy_PX );
     frac.y = 1.0 - frac.y;
-
     return frac;
 }
