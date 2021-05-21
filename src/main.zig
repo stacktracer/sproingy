@@ -16,8 +16,6 @@ const Model = struct {
     rootPaintable: MultiPaintable,
     draggers: ArrayList( *Dragger ),
     activeDragger: ?*Dragger,
-
-    // TODO: Replace with listenables
     widgetsToRepaint: ArrayList( *GtkWidget ),
     windowsToClose: ArrayList( *GtkWindow ),
 
