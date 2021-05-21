@@ -409,7 +409,7 @@ fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll_WORKAROUND, model: *Model ) 
     const zoomFactor: f64 = switch ( ev.direction ) {
         .GDK_SCROLL_UP => zoomStepFactor,
         .GDK_SCROLL_DOWN => 1.0 / zoomStepFactor,
-        else => 0.0,
+        else => 1.0,
     };
     const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
     const mouse_FRAC = pxToAxisFrac( &model.axis, mouse_PX );
