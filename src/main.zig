@@ -94,7 +94,7 @@ fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll, model: *Model ) callconv(.C
     const mouse_XY = model.axis.getBounds( ).fracToValue( mouse_FRAC );
 
     const zoomStepFactor = 1.12;
-    const zoomSteps = getZoomSteps( @ptrCast( *GdkEvent, ev ) );
+    const zoomSteps = getZoomSteps( ev );
     const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
     const scale = xy( zoomFactor*model.axis.x.scale, zoomFactor*model.axis.y.scale );
 
@@ -104,7 +104,7 @@ fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll, model: *Model ) callconv(.C
     return 1;
 }
 
-fn getZoomSteps( ev: *GdkEvent ) f64 {
+fn getZoomSteps( ev: *GdkEventScroll ) f64 {
     var direction: GdkScrollDirection = undefined;
     if ( gdk_event_get_scroll_direction( @ptrCast( *GdkEvent, ev ), &direction ) != 0 ) {
         return switch ( direction ) {
@@ -164,10 +164,6 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
             gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
             gtk_widget_set_can_focus( glArea, 1 );
 
-            // TODO: The following didn't seem to do anything
-            // var err = g_error_new_literal( g_quark_from_static_string( "GDK_GL_ERROR" ), GDK_GL_ERROR_NOT_AVAILABLE, "Test" );
-            // gtk_gl_area_set_error( @ptrCast( *GtkGLArea, glArea ), err );
-
             try model.widgetsToRepaint.append( glArea );
 
             const renderHandlerId = try gtkz_signal_connect_data( glArea, "render", @ptrCast( GCallback, onRender ), model, null, .G_CONNECT_FLAGS_NONE );
@@ -187,6 +183,10 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
             gtk_widget_show_all( window );
         }
     }.run( app_, model_ ) catch {
+        // TODO: The following didn't seem to do anything
+        // var err = g_error_new_literal( g_quark_from_static_string( "GDK_GL_ERROR" ), GDK_GL_ERROR_NOT_AVAILABLE, "Test" );
+        // gtk_gl_area_set_error( @ptrCast( *GtkGLArea, glArea ), err );
+
         // FIXME: Don't panic
         std.debug.panic( "Failed to activate", .{} );
     };
