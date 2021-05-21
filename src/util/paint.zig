@@ -1,79 +1,81 @@
 const std = @import( "std" );
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 usingnamespace @import( "misc.zig" );
 usingnamespace @import( "c.zig" );
 
-pub const Paintable = opaque {};
-
 pub const Painter = struct {
-    needsInit: bool = true,
+    name: []const u8,
 
-    initFn: fn ( self: *Painter, viewport_PX: Interval2 ) anyerror!void,
-    paintFn: fn ( self: *Painter, viewport_PX: Interval2 ) anyerror!void,
-    deinitFn: fn ( self: *Painter ) void,
+    glResourcesSet: bool = false,
 
-    pub fn paint( self: *Painter, viewport_PX: Interval2 ) !void {
-        if ( self.needsInit ) {
-            try self.initFn( self, viewport_PX );
-            self.needsInit = false;
+    /// Called while the GL context is current, and before the first paint.
+    glInitFn: fn ( self: *Painter, viewport_PX: Interval2 ) anyerror!void,
+
+    // Called while the GL context is current.
+    glPaintFn: fn ( self: *Painter, viewport_PX: Interval2 ) anyerror!void,
+
+    // Called while the GL context is current.
+    glDeinitFn: fn ( self: *Painter ) void,
+
+    pub fn glPaint( self: *Painter, viewport_PX: Interval2 ) !void {
+        if ( !self.glResourcesSet ) {
+            try self.glInitFn( self, viewport_PX );
+            self.glResourcesSet = true;
         }
-        return self.paintFn( self, viewport_PX );
+        return self.glPaintFn( self, viewport_PX );
     }
 
-    pub fn deinit( self: *Painter ) void {
-        return self.deinitFn( self );
+    pub fn glDeinit( self: *Painter ) void {
+        if ( self.glResourcesSet ) {
+            self.glDeinitFn( self );
+            self.glResourcesSet = false;
+        }
     }
 };
 
 pub const MultiPaintable = struct {
     painter: Painter,
+    childPainters: ArrayList( *Painter ),
 
-    allocator: *std.mem.Allocator,
-    childPaintables: std.ArrayList( *Paintable ),
-    childPainters: std.ArrayList( *Painter ),
-
-    pub fn init( self: *MultiPaintable, allocator: *std.mem.Allocator ) void {
-        self.allocator = allocator;
-        self.childPaintables = std.ArrayList( *Paintable ).init( allocator );
-        self.childPainters = std.ArrayList( *Painter ).init( allocator );
-        self.painter = Painter {
-            .initFn = painterInit,
-            .paintFn = painterPaint,
-            .deinitFn = painterDeinit,
+    pub fn create( name: []const u8, allocator: *Allocator ) MultiPaintable {
+        return MultiPaintable {
+            .childPainters = ArrayList( *Painter ).init( allocator ),
+            .painter = Painter {
+                .name = name,
+                .glInitFn = glInit,
+                .glPaintFn = glPaint,
+                .glDeinitFn = glDeinit,
+            },
         };
     }
 
-    pub fn addChild( self: *MultiPaintable, comptime T: type ) !*T {
-        var childPaintable = try self.allocator.create( T );
-        try self.childPaintables.append( @ptrCast( *Paintable, childPaintable ) );
-        try self.childPainters.append( &childPaintable.painter );
-        return childPaintable;
-    }
-
-    fn painterInit( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glInit( painter: *Painter, viewport_PX: Interval2 ) !void {
         // Do nothing
     }
 
-    fn painterPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( MultiPaintable, "painter", painter );
         for ( self.childPainters.items ) |childPainter| {
-            try childPainter.paint( viewport_PX );
+            try childPainter.glPaint( viewport_PX );
         }
     }
 
-    fn painterDeinit( painter: *Painter ) void {
+    fn glDeinit( painter: *Painter ) void {
         const self = @fieldParentPtr( MultiPaintable, "painter", painter );
         for ( self.childPainters.items ) |childPainter| {
-            childPainter.deinit( );
+            childPainter.glDeinit( );
+        }
+        self.deinit( );
+    }
+
+    pub fn deinit( self: *MultiPaintable ) void {
+        for ( self.childPainters.items ) |childPainter| {
+            if ( childPainter.glResourcesSet ) {
+                std.debug.warn( "glDeinit was never called for painter \"{}\"\n", .{ childPainter.name } );
+            }
         }
         self.childPainters.deinit( );
-    }
-
-    // FIXME: Awkward
-    pub fn deinit( self: *MultiPaintable ) void {
-        for ( self.childPaintables.items ) |childPaintable| {
-            self.allocator.destroy( childPaintable );
-        }
-        self.childPaintables.deinit( );
     }
 };
 
@@ -84,23 +86,26 @@ pub const ClearPaintable = struct {
     depth: GLfloat,
     stencil: GLint,
 
-    pub fn init( self: *ClearPaintable, mask: GLbitfield ) void {
-        self.mask = mask;
-        self.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 0.0 };
-        self.depth = 1.0;
-        self.stencil = 0;
-        self.painter = Painter {
-            .initFn = painterInit,
-            .paintFn = painterPaint,
-            .deinitFn = painterDeinit,
+    pub fn create( name: []const u8, mask: GLbitfield ) ClearPaintable {
+        return ClearPaintable {
+            .mask = mask,
+            .rgba = [_]GLfloat { 0.0, 0.0, 0.0, 0.0 },
+            .depth = 1.0,
+            .stencil = 0,
+            .painter = Painter {
+                .name = name,
+                .glInitFn = glInit,
+                .glPaintFn = glPaint,
+                .glDeinitFn = glDeinit,
+            },
         };
     }
 
-    fn painterInit( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glInit( painter: *Painter, viewport_PX: Interval2 ) !void {
         // Do nothing
     }
 
-    fn painterPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( ClearPaintable, "painter", painter );
         if ( self.mask & GL_COLOR_BUFFER_BIT != 0 ) {
             glClearColor( self.rgba[0], self.rgba[1], self.rgba[2], self.rgba[3] );
@@ -114,7 +119,7 @@ pub const ClearPaintable = struct {
         glClear( self.mask );
     }
 
-    fn painterDeinit( painter: *Painter ) void {
+    fn glDeinit( painter: *Painter ) void {
         // Do nothing
     }
 };

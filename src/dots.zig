@@ -1,4 +1,6 @@
 const std = @import( "std" );
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 usingnamespace @import( "util/axis.zig" );
 usingnamespace @import( "util/glz.zig" );
 usingnamespace @import( "util/misc.zig" );
@@ -9,7 +11,7 @@ pub const DotsPaintable = struct {
 
     axis: *Axis2,
 
-    vCoords: std.ArrayList( GLfloat ),
+    vCoords: ArrayList( GLfloat ),
     vCoordsModified: bool,
 
     prog: DotsProgram,
@@ -17,28 +19,31 @@ pub const DotsPaintable = struct {
     vCount: GLsizei,
     vao: GLuint,
 
-    pub fn init( self: *DotsPaintable, axis: *Axis2, allocator: *std.mem.Allocator ) void {
-        self.axis = axis;
+    pub fn create( name: []const u8, axis: *Axis2, allocator: *Allocator ) DotsPaintable {
+        return DotsPaintable {
+            .axis = axis,
 
-        self.vCoords = std.ArrayList( GLfloat ).init( allocator );
-        self.vCoordsModified = true;
+            .vCoords = ArrayList( GLfloat ).init( allocator ),
+            .vCoordsModified = true,
 
-        self.prog = undefined;
-        self.vbo = 0;
-        self.vCount = 0;
-        self.vao = 0;
+            .prog = undefined,
+            .vbo = 0,
+            .vCount = 0,
+            .vao = 0,
 
-        self.painter = Painter {
-            .initFn = painterInit,
-            .paintFn = painterPaint,
-            .deinitFn = painterDeinit,
+            .painter = Painter {
+                .name = name,
+                .glInitFn = glInit,
+                .glPaintFn = glPaint,
+                .glDeinitFn = glDeinit,
+            },
         };
     }
 
-    fn painterInit( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glInit( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( DotsPaintable, "painter", painter );
 
-        try self.prog.init( );
+        self.prog = try DotsProgram.glCreate( );
 
         glGenBuffers( 1, &self.vbo );
         glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
@@ -49,7 +54,7 @@ pub const DotsPaintable = struct {
         glVertexAttribPointer( self.prog.inCoords, 2, GL_FLOAT, GL_FALSE, 0, null );
     }
 
-    fn painterPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
         const self = @fieldParentPtr( DotsPaintable, "painter", painter );
 
         if ( self.vCoordsModified ) {
@@ -76,11 +81,11 @@ pub const DotsPaintable = struct {
         }
     }
 
-    fn painterDeinit( painter: *Painter ) void {
+    fn glDeinit( painter: *Painter ) void {
         const self = @fieldParentPtr( DotsPaintable, "painter", painter );
 
         // FIXME: This doesn't currently get invoked
-        std.debug.print( "  Dots DEINIT\n", .{} );
+        std.debug.print( "  Dots glDeinit\n", .{} );
 
         self.vCoords.deinit( );
         glDeleteProgram( self.prog.program );
@@ -99,8 +104,7 @@ const DotsProgram = struct {
     /// x_XAXIS, y_YAXIS
     inCoords: GLuint,
 
-    /// Must be called while the appropriate GL context is current
-    pub fn init( self: *DotsProgram ) !void {
+    pub fn glCreate( ) !DotsProgram {
         const vertSource =
             \\#version 150 core
             \\
@@ -158,10 +162,13 @@ const DotsProgram = struct {
             \\}
         ;
 
-        self.program = try glzCreateProgram( vertSource, fragSource );
-        self.XY_BOUNDS = glGetUniformLocation( self.program, "XY_BOUNDS" );
-        self.SIZE_PX = glGetUniformLocation( self.program, "SIZE_PX" );
-        self.RGBA = glGetUniformLocation( self.program, "RGBA" );
-        self.inCoords = @intCast( GLuint, glGetAttribLocation( self.program, "inCoords" ) );
+        const program = try glzCreateProgram( vertSource, fragSource );
+        return DotsProgram {
+            .program = program,
+            .XY_BOUNDS = glGetUniformLocation( program, "XY_BOUNDS" ),
+            .SIZE_PX = glGetUniformLocation( program, "SIZE_PX" ),
+            .RGBA = glGetUniformLocation( program, "RGBA" ),
+            .inCoords = @intCast( GLuint, glGetAttribLocation( program, "inCoords" ) ),
+        };
     }
 };

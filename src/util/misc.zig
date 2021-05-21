@@ -2,6 +2,13 @@ pub const Vec2 = struct {
     x: f64,
     y: f64,
 
+    pub fn create( x: f64, y: f64 ) Vec2 {
+        return Vec2 {
+            .x = x,
+            .y = y,
+        };
+    }
+
     pub fn set( self: *Vec2, x: f64, y: f64 ) void {
         self.x = x;
         self.y = y;
@@ -9,10 +16,7 @@ pub const Vec2 = struct {
 };
 
 pub fn xy( x: f64, y: f64 ) Vec2 {
-    return Vec2 {
-        .x = x,
-        .y = y,
-    };
+    return Vec2.create( x, y );
 }
 
 pub const Interval1 = struct {
@@ -51,6 +55,13 @@ pub const Interval2 = struct {
     x: Interval1,
     y: Interval1,
 
+    pub fn create( x: f64, y: f64, w: f64, h: f64 ) Interval2 {
+        return Interval2 {
+            .x = Interval1.create( x, w ),
+            .y = Interval1.create( y, h ),
+        };
+    }
+
     pub fn valueToFrac( self: *const Interval2, value: Vec2 ) Vec2 {
         return Vec2 {
             .x = self.x.valueToFrac( value.x ),
@@ -67,8 +78,5 @@ pub const Interval2 = struct {
 };
 
 pub fn xywh( x: f64, y: f64, w: f64, h: f64 ) Interval2 {
-    return Interval2 {
-        .x = Interval1.create( x, w ),
-        .y = Interval1.create( y, h ),
-    };
+    return Interval2.create( x, y, w, h );
 }
