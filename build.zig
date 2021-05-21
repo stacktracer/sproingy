@@ -7,10 +7,17 @@ pub fn build( b: *Builder ) void {
 
     const exe = b.addExecutable( "dummy", "src/main.zig" );
     exe.setBuildMode( mode );
+
+    // Local headers first, so they get precedence over system headers
+    exe.addIncludeDir( "include/glib-2.0" );
+    exe.addIncludeDir( "include/gtk-3.0" );
+
+    // System headers
     exe.addIncludeDir( "/usr/include" );
     exe.addIncludeDir( "/usr/include/GL" );
 
     // pkg-config --cflags gtk+-3.0
+    // TODO: Can we run pkg-config here and parse the output?
     exe.addIncludeDir( "/usr/include/gtk-3.0" );
     exe.addIncludeDir( "/usr/include/pango-1.0" );
     exe.addIncludeDir( "/usr/include/glib-2.0" );
@@ -33,10 +40,12 @@ pub fn build( b: *Builder ) void {
     exe.addIncludeDir( "/usr/lib/dbus-1.0/include" );
     exe.addIncludeDir( "/usr/include/at-spi-2.0" );
 
+    // System libraries
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary( "epoxy" );
 
     // pkg-config --libs gtk+-3.0
+    // TODO: Can we run pkg-config here and parse the output?
     exe.linkSystemLibrary( "gtk-3" );
     exe.linkSystemLibrary( "gdk-3" );
     exe.linkSystemLibrary( "z" );

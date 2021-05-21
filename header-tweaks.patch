@@ -1,0 +1,32 @@
+diff -Naur include/glib-2.0/gobject/gsignal.h.OLD include/glib-2.0/gobject/gsignal.h
+--- include/glib-2.0/gobject/gsignal.h.OLD	2021-05-11 09:19:11.000000000 -0400
++++ include/glib-2.0/gobject/gsignal.h	2021-05-20 21:19:53.019098537 -0400
+@@ -159,6 +159,7 @@
+  */
+ typedef enum
+ {
++  G_CONNECT_FLAGS_NONE	= 0,
+   G_CONNECT_AFTER	= 1 << 0,
+   G_CONNECT_SWAPPED	= 1 << 1
+ } GConnectFlags;
+diff -Naur include/gtk-3.0/gdk/gdkevents.h.OLD include/gtk-3.0/gdk/gdkevents.h
+--- include/gtk-3.0/gdk/gdkevents.h.OLD	2021-04-23 06:21:31.000000000 -0400
++++ include/gtk-3.0/gdk/gdkevents.h	2021-05-20 21:37:51.436799773 -0400
+@@ -860,7 +860,7 @@
+   gdouble x_root, y_root;
+   gdouble delta_x;
+   gdouble delta_y;
+-  guint is_stop : 1;
++  //guint is_stop : 1;
+ };
+ 
+ /**
+@@ -906,7 +906,7 @@
+   gchar *string;
+   guint16 hardware_keycode;
+   guint8 group;
+-  guint is_modifier : 1;
++  //guint is_modifier : 1;
+ };
+ 
+ /**
