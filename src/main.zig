@@ -292,8 +292,9 @@ const Model = struct {
     dragger: ?*Dragger,
     axis: Axis2,
 
-    // TODO: Would be nice to have a listenable here instead
+    // TODO: Would be nice to have listenables here instead
     widgetsToRepaint: ArrayList( *GtkWidget ),
+    windowsToClose: ArrayList( *GtkWindow ),
 
     pub fn init( self: *Model, allocator: *Allocator ) void {
         self.allocator = allocator;
@@ -302,6 +303,7 @@ const Model = struct {
         self.dragger = null;
         self.axis = Axis2.create( xywh( 0, 0, 500, 500 ) );
         self.widgetsToRepaint = ArrayList( *GtkWidget ).init( allocator );
+        self.windowsToClose = ArrayList( *GtkWindow ).init( allocator );
     }
 
     pub fn deinit( self: *Model ) void {
@@ -314,6 +316,12 @@ const Model = struct {
     pub fn fireRepaint( self: *Model ) void {
         for ( self.widgetsToRepaint.items ) |widget| {
             gtk_widget_queue_draw( widget );
+        }
+    }
+
+    pub fn fireQuit( self: *Model ) void {
+        for ( self.windowsToClose.items ) |window| {
+            gtk_window_close( window );
         }
     }
 };
@@ -388,12 +396,21 @@ fn getZoomSteps( ev: *GdkEvent ) f64 {
 }
 
 fn onKeyPress( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(.C) gboolean {
-    print( "     KEY_PRESS: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
+    switch ( ev.keyval ) {
+        GDK_KEY_Escape => model.fireQuit( ),
+        else => {
+            // print( "  KEY_PRESS: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
+        },
+    }
     return 1;
 }
 
 fn onKeyRelease( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(.C) gboolean {
-    print( "   KEY_RELEASE: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
+    switch ( ev.keyval ) {
+        else => {
+            // print( "KEY_RELEASE: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
+        },
+    }
     return 1;
 }
 
@@ -419,7 +436,7 @@ fn onActivate( app: *GtkApplication, model: *Model ) callconv(.C) void {
 
     model.widgetsToRepaint.append( glArea ) catch {
         // FIXME: Don't panic
-        panic( "Failed to connect 'render' handler", .{} );
+        panic( "Failed to add glArea to widgetsToRepaint", .{} );
     };
 
     const renderHandlerId = g_signal_connect_data( glArea, "render", @ptrCast( GCallback, onRender ), model, null, .G_CONNECT_FLAGS_NONE );
@@ -465,6 +482,10 @@ fn onActivate( app: *GtkApplication, model: *Model ) callconv(.C) void {
     }
 
     const window = gtk_application_window_new( app );
+    model.windowsToClose.append( @ptrCast( *GtkWindow, window ) ) catch {
+        // FIXME: Don't panic
+        panic( "Failed to add window to windowsToClose", .{} );
+    };
     gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
     gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Dummy" );
     gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 800, 600 );
