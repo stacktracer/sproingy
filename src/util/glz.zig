@@ -1,17 +1,11 @@
 const std = @import( "std" );
-const u = @import( "util.zig" );
-const Interval2 = u.Interval2;
-const xywh = u.xywh;
-const cAllocator = std.heap.c_allocator;
-usingnamespace @cImport( {
-    @cInclude( "epoxy/gl.h" );
-} );
+pub usingnamespace @import( "c.zig" );
+pub usingnamespace @import( "misc.zig" );
 
-const GlzError = error {
+pub const GlzError = error {
     GenericFailure,
 };
 
-// TODO: Maybe take an allocator arg, but only if we're going to have an allocator handy for other purposes
 pub fn glzCreateProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) !GLuint {
     const vertShader = try glzCompileShaderSource( GL_VERTEX_SHADER, vertSource );
     defer glDeleteShader( vertShader );
@@ -34,8 +28,9 @@ pub fn glzCreateProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) 
     if ( linkStatus != GL_TRUE ) {
         var messageSize: GLint = undefined;
         glGetProgramiv( program, GL_INFO_LOG_LENGTH, &messageSize );
-        const message = try cAllocator.alloc( u8, @intCast( usize, messageSize ) );
-        defer cAllocator.free( message );
+        const allocator = std.heap.c_allocator;
+        const message = try allocator.alloc( u8, @intCast( usize, messageSize ) );
+        defer allocator.free( message );
         glGetProgramInfoLog( program, messageSize, null, message.ptr );
         std.debug.warn( "Shader linking failed:\n{s}\n", .{ message } );
         // TODO: Make message available to caller
@@ -55,8 +50,9 @@ pub fn glzCompileShaderSource( shaderType: GLenum, source: [*:0]const u8 ) !GLui
     if ( compileStatus != GL_TRUE ) {
         var messageSize: GLint = undefined;
         glGetShaderiv( shader, GL_INFO_LOG_LENGTH, &messageSize );
-        const message = try cAllocator.alloc( u8, @intCast( usize, messageSize ) );
-        defer cAllocator.free( message );
+        const allocator = std.heap.c_allocator;
+        const message = try allocator.alloc( u8, @intCast( usize, messageSize ) );
+        defer allocator.free( message );
         glGetShaderInfoLog( shader, messageSize, null, message.ptr );
         std.debug.warn( "Shader compilation failed:\n{s}\n", .{ message } );
         // TODO: Make message available to caller
