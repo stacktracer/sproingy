@@ -1,6 +1,7 @@
 const std = @import( "std" );
 const print = std.debug.print;
 const panic = std.debug.panic;
+const pow = std.math.pow;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const u = @import( "util.zig" );
@@ -352,19 +353,38 @@ fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) cal
 }
 
 fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll, model: *Model ) callconv(.C) gboolean {
-    const zoomStepFactor = 1.12;
-    const zoomFactor: f64 = switch ( ev.direction ) {
-        .GDK_SCROLL_UP => zoomStepFactor,
-        .GDK_SCROLL_DOWN => 1.0 / zoomStepFactor,
-        else => 1.0,
-    };
     const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
     const mouse_FRAC = pxToAxisFrac( &model.axis, mouse_PX );
     const mouse_XY = model.axis.getBounds( ).fracToValue( mouse_FRAC );
+
+    const zoomStepFactor = 1.12;
+    const zoomSteps = getZoomSteps( @ptrCast( *GdkEvent, ev ) );
+    const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
     const scale = xy( zoomFactor*model.axis.x.scale, zoomFactor*model.axis.y.scale );
+
     model.axis.set( mouse_FRAC, mouse_XY, scale );
     model.fireRepaint( );
+
     return 1;
+}
+
+fn getZoomSteps( ev: *GdkEvent ) f64 {
+    var direction: GdkScrollDirection = undefined;
+    if ( gdk_event_get_scroll_direction( @ptrCast( *GdkEvent, ev ), &direction ) != 0 ) {
+        return switch ( direction ) {
+            .GDK_SCROLL_UP => 1.0,
+            .GDK_SCROLL_DOWN => -1.0,
+            else => 0.0,
+        };
+    }
+
+    var xDelta: f64 = undefined;
+    var yDelta: f64 = undefined;
+    if ( gdk_event_get_scroll_deltas( @ptrCast( *GdkEvent, ev ), &xDelta, &yDelta ) != 0 ) {
+        return yDelta;
+    }
+
+    return 0.0;
 }
 
 fn onKeyPress( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(.C) gboolean {
