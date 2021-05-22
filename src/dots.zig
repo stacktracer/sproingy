@@ -83,10 +83,6 @@ pub const DotsPaintable = struct {
 
     fn glDeinit( painter: *Painter ) void {
         const self = @fieldParentPtr( DotsPaintable, "painter", painter );
-
-        // FIXME: This doesn't currently get invoked
-        std.debug.print( "  Dots glDeinit\n", .{} );
-
         self.vCoords.deinit( );
         glDeleteProgram( self.prog.program );
         glDeleteVertexArrays( 1, &self.vao );

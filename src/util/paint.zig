@@ -66,7 +66,7 @@ pub const MultiPaintable = struct {
         for ( self.childPainters.items ) |childPainter| {
             childPainter.glDeinit( );
         }
-        self.deinit( );
+        self.childPainters.items.len = 0;
     }
 
     pub fn deinit( self: *MultiPaintable ) void {

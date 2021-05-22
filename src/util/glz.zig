@@ -68,7 +68,7 @@ pub fn glzEnablePremultipliedAlphaBlending( ) void {
     glEnable( GL_BLEND );
 }
 
-pub fn glzdisableBlending( ) void {
+pub fn glzDisableBlending( ) void {
     glDisable( GL_BLEND );
 }
 
@@ -81,7 +81,13 @@ pub fn glzUniformInterval2( location: GLint, interval: Interval2 ) void {
 }
 
 pub fn glzGetViewport_PX( ) Interval2 {
-    var viewport_PX: [4]GLint = undefined;
+    var viewport_PX: [4]GLint = [_]GLint{ -1, -1, -1, -1 };
     glGetIntegerv( GL_VIEWPORT, &viewport_PX );
     return xywh( @intToFloat( f64, viewport_PX[0] ), @intToFloat( f64, viewport_PX[1] ), @intToFloat( f64, viewport_PX[2] ), @intToFloat( f64, viewport_PX[3] ) );
+}
+
+pub fn glzHasCurrentContext( ) bool {
+    var major: GLint = -1;
+    glGetIntegerv( GL_MAJOR_VERSION, &major );
+    return ( major != -1 );
 }
