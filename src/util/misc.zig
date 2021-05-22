@@ -1,3 +1,7 @@
+const std = @import( "std" );
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+
 pub const Vec2 = struct {
     x: f64,
     y: f64,
@@ -79,4 +83,13 @@ pub const Interval2 = struct {
 
 pub fn xywh( x: f64, y: f64, w: f64, h: f64 ) Interval2 {
     return Interval2.create( x, y, w, h );
+}
+
+pub fn createArgsList( it: *std.process.ArgIterator, allocator: *Allocator ) !ArrayList( [*c]u8 ) {
+    var result = ArrayList( [*c]u8 ).init( allocator );
+    while ( true ) {
+        const arg = try ( it.next( allocator ) orelse break );
+        try result.append( arg );
+    }
+    return result;
 }
