@@ -41,7 +41,7 @@ pub fn build( b: *Builder ) void {
     exe.addIncludeDir( "/usr/include/at-spi-2.0" );
 
     // System libraries
-    exe.linkSystemLibrary("c");
+    exe.linkSystemLibrary( "c" );
     exe.linkSystemLibrary( "epoxy" );
 
     // pkg-config --libs gtk+-3.0
