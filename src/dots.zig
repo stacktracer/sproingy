@@ -11,8 +11,9 @@ pub const DotsPaintable = struct {
 
     axis: *Axis2,
 
-    vCoords: ArrayList( GLfloat ),
-    vCoordsModified: bool,
+    dotSize_LPX: f64,
+    dotCoords: ArrayList( GLfloat ),
+    dotCoordsModified: bool,
 
     prog: DotsProgram,
     vbo: GLuint,
@@ -23,8 +24,9 @@ pub const DotsPaintable = struct {
         return DotsPaintable {
             .axis = axis,
 
-            .vCoords = ArrayList( GLfloat ).init( allocator ),
-            .vCoordsModified = true,
+            .dotSize_LPX = 15,
+            .dotCoords = ArrayList( GLfloat ).init( allocator ),
+            .dotCoordsModified = true,
 
             .prog = undefined,
             .vbo = 0,
@@ -40,7 +42,7 @@ pub const DotsPaintable = struct {
         };
     }
 
-    fn glInit( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glInit( painter: *Painter, pc: *const PainterContext ) !void {
         const self = @fieldParentPtr( DotsPaintable, "painter", painter );
 
         self.prog = try DotsProgram.glCreate( );
@@ -54,26 +56,27 @@ pub const DotsPaintable = struct {
         glVertexAttribPointer( self.prog.inCoords, 2, GL_FLOAT, GL_FALSE, 0, null );
     }
 
-    fn glPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glPaint( painter: *Painter, pc: *const PainterContext ) !void {
         const self = @fieldParentPtr( DotsPaintable, "painter", painter );
 
-        if ( self.vCoordsModified ) {
-            self.vCount = @intCast( GLsizei, @divTrunc( self.vCoords.items.len, 2 ) );
+        if ( self.dotCoordsModified ) {
+            self.vCount = @intCast( GLsizei, @divTrunc( self.dotCoords.items.len, 2 ) );
             if ( self.vCount > 0 ) {
-                glBufferData( GL_ARRAY_BUFFER, 2*self.vCount*@sizeOf( GLfloat ), @ptrCast( *const c_void, self.vCoords.items.ptr ), GL_STATIC_DRAW );
+                glBufferData( GL_ARRAY_BUFFER, 2*self.vCount*@sizeOf( GLfloat ), @ptrCast( *const c_void, self.dotCoords.items.ptr ), GL_STATIC_DRAW );
             }
-            self.vCoordsModified = false;
+            self.dotCoordsModified = false;
         }
 
         if ( self.vCount > 0 ) {
             const bounds = self.axis.getBounds( );
+            const dotSize_PX = @floatCast( f32, self.dotSize_LPX * pc.lpxToPx );
 
             glzEnablePremultipliedAlphaBlending( );
 
             glEnable( GL_VERTEX_PROGRAM_POINT_SIZE );
             glUseProgram( self.prog.program );
             glzUniformInterval2( self.prog.XY_BOUNDS, bounds );
-            glUniform1f( self.prog.SIZE_PX, 15 );
+            glUniform1f( self.prog.SIZE_PX, dotSize_PX );
             glUniform4f( self.prog.RGBA, 1.0, 0.0, 0.0, 1.0 );
 
             glBindVertexArray( self.vao );
@@ -83,7 +86,7 @@ pub const DotsPaintable = struct {
 
     fn glDeinit( painter: *Painter ) void {
         const self = @fieldParentPtr( DotsPaintable, "painter", painter );
-        self.vCoords.deinit( );
+        self.dotCoords.deinit( );
         glDeleteProgram( self.prog.program );
         glDeleteVertexArrays( 1, &self.vao );
         glDeleteBuffers( 1, &self.vbo );

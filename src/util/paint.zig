@@ -4,26 +4,31 @@ const ArrayList = std.ArrayList;
 usingnamespace @import( "misc.zig" );
 usingnamespace @import( "c.zig" );
 
+pub const PainterContext = struct {
+    viewport_PX: Interval2,
+    lpxToPx: f64,
+};
+
 pub const Painter = struct {
     name: []const u8,
 
     glResourcesSet: bool = false,
 
     /// Called while the GL context is current, and before the first paint.
-    glInitFn: fn ( self: *Painter, viewport_PX: Interval2 ) anyerror!void,
+    glInitFn: fn ( self: *Painter, pc: *const PainterContext ) anyerror!void,
 
     // Called while the GL context is current.
-    glPaintFn: fn ( self: *Painter, viewport_PX: Interval2 ) anyerror!void,
+    glPaintFn: fn ( self: *Painter, pc: *const PainterContext ) anyerror!void,
 
     // Called while the GL context is current.
     glDeinitFn: fn ( self: *Painter ) void,
 
-    pub fn glPaint( self: *Painter, viewport_PX: Interval2 ) !void {
+    pub fn glPaint( self: *Painter, pc: *const PainterContext ) !void {
         if ( !self.glResourcesSet ) {
-            try self.glInitFn( self, viewport_PX );
+            try self.glInitFn( self, pc );
             self.glResourcesSet = true;
         }
-        return self.glPaintFn( self, viewport_PX );
+        return self.glPaintFn( self, pc );
     }
 
     pub fn glDeinit( self: *Painter ) void {
@@ -50,14 +55,14 @@ pub const MultiPaintable = struct {
         };
     }
 
-    fn glInit( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glInit( painter: *Painter, pc: *const PainterContext ) !void {
         // Do nothing
     }
 
-    fn glPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glPaint( painter: *Painter, pc: *const PainterContext ) !void {
         const self = @fieldParentPtr( MultiPaintable, "painter", painter );
         for ( self.childPainters.items ) |childPainter| {
-            try childPainter.glPaint( viewport_PX );
+            try childPainter.glPaint( pc );
         }
     }
 
@@ -101,11 +106,11 @@ pub const ClearPaintable = struct {
         };
     }
 
-    fn glInit( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glInit( painter: *Painter, pc: *const PainterContext ) !void {
         // Do nothing
     }
 
-    fn glPaint( painter: *Painter, viewport_PX: Interval2 ) !void {
+    fn glPaint( painter: *Painter, pc: *const PainterContext ) !void {
         const self = @fieldParentPtr( ClearPaintable, "painter", painter );
         if ( self.mask & GL_COLOR_BUFFER_BIT != 0 ) {
             glClearColor( self.rgba[0], self.rgba[1], self.rgba[2], self.rgba[3] );

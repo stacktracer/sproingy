@@ -29,12 +29,16 @@ pub fn gtkz_signal_connect_data( instance: gpointer, signalName: [*c]const gchar
     };
 }
 
+pub fn gtkzScaleFactor( widget: *GtkWidget ) f64 {
+    return @intToFloat( f64, gtk_widget_get_scale_factor( widget ) );
+}
+
 pub fn gtkzMousePos_PX( widget: *GtkWidget, ev: anytype ) Vec2 {
     // The event also knows what window and device it came from ...
     // but ultimately the mouse is interacting with the contents of
     // a widget, so it's the widget's scale factor (not the window's
     // or the device's) that we care about here
-    const scale = @intToFloat( f64, gtk_widget_get_scale_factor( widget ) );
+    const scale = gtkzScaleFactor( widget );
 
     const xy_LPX = switch ( @TypeOf( ev ) ) {
         *GdkEventMotion => xy( ev.x, ev.y ),

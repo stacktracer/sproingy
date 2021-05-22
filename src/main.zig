@@ -154,9 +154,12 @@ fn onKeyRelease( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(
 fn onRender( glArea_: *GtkGLArea, glContext_: *GdkGLContext, model_: *Model ) callconv(.C) gboolean {
     return struct {
         fn run( glArea: *GtkGLArea, glContext: *GdkGLContext, model: *Model ) !gboolean {
-            const viewport_PX = glzGetViewport_PX( );
-            model.axis.setViewport_PX( viewport_PX );
-            try model.rootPaintable.painter.glPaint( viewport_PX );
+            const pc = PainterContext {
+                .viewport_PX = glzGetViewport_PX( ),
+                .lpxToPx = gtkzScaleFactor( @ptrCast( *GtkWidget, glArea ) ),
+            };
+            model.axis.setViewport_PX( pc.viewport_PX );
+            try model.rootPaintable.painter.glPaint( &pc );
             return 0;
         }
     }.run( glArea_, glContext_, model_ ) catch |e| {
@@ -224,7 +227,7 @@ pub fn main( ) !void {
 
     var dotsPaintable = DotsPaintable.create( "dots", &axis, &gpa.allocator );
     var dotsCoords = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
-    try dotsPaintable.vCoords.appendSlice( &dotsCoords );
+    try dotsPaintable.dotCoords.appendSlice( &dotsCoords );
 
     var model = Model.create( &axis, &gpa.allocator );
     try model.rootPaintable.childPainters.append( &bgPaintable.painter );
