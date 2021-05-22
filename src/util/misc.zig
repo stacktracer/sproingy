@@ -85,11 +85,27 @@ pub fn xywh( x: f64, y: f64, w: f64, h: f64 ) Interval2 {
     return Interval2.create( x, y, w, h );
 }
 
-pub fn createArgsList( it: *std.process.ArgIterator, allocator: *Allocator ) !ArrayList( [*c]u8 ) {
-    var result = ArrayList( [*c]u8 ).init( allocator );
-    while ( true ) {
-        const arg = try ( it.next( allocator ) orelse break );
-        try result.append( arg );
+pub const ProcessArgs = struct {
+    list: ArrayList( [*c]u8 ),
+    argc: c_int,
+    argv: [*c][*c]u8,
+
+    pub fn create( it: *std.process.ArgIterator, allocator: *Allocator ) !ProcessArgs {
+        var list = ArrayList( [*c]u8 ).init( allocator );
+        while ( true ) {
+            const arg = try ( it.next( allocator ) orelse break );
+            try list.append( arg );
+        }
+        return ProcessArgs {
+            .list = list,
+            .argc = @intCast( c_int, list.items.len ),
+            .argv = list.items.ptr,
+        };
     }
-    return result;
-}
+
+    pub fn deinit( self: *ProcessArgs ) void {
+        self.argc = 0;
+        self.argv = null;
+        self.list.deinit( );
+    }
+};

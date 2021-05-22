@@ -242,10 +242,9 @@ pub fn main( ) !void {
         try gtkzSignalConnect( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
     } );
 
-    var args = ( try createArgsList( &std.process.args( ), &gpa.allocator ) ).items;
-    const argc = @intCast( c_int, args.len );
-    var argv = args.ptr;
-    const runResult = g_application_run( @ptrCast( *GApplication, app ), argc, argv );
+    var args = try ProcessArgs.create( &std.process.args( ), &gpa.allocator );
+    defer args.deinit( );
+    const runResult = g_application_run( @ptrCast( *GApplication, app ), args.argc, args.argv );
     if ( runResult != 0 ) {
         std.debug.warn( "Application exited with code {}", .{ runResult } );
     }
