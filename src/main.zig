@@ -191,7 +191,7 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
             gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 800, 600 );
             gtk_widget_show_all( window );
             try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
-            // TODO: g_object_unref( window )?
+            // FIXME: g_object_unref( window )?
 
             gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
 
@@ -245,7 +245,7 @@ pub fn main( ) !void {
     };
     try model.handlersToDisconnect.appendSlice( &handlers );
 
-    // TODO: Pass argc and argv somehow?
+    // FIXME: Pass argc and argv somehow
     const runResult = g_application_run( @ptrCast( *GApplication, app ), 0, null );
     if ( runResult != 0 ) {
         std.debug.warn( "Application exited with code {}", .{ runResult } );

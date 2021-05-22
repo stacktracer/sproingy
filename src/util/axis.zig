@@ -112,7 +112,7 @@ pub const Axis2 = struct {
     }
 };
 
-// TODO: Test with hidpi (https://wiki.gnome.org/HowDoI/HiDpi/)
+// FIXME: Test with hidpi (https://wiki.gnome.org/HowDoI/HiDpi/)
 pub fn pxToAxisFrac( axis: *const Axis2, xy_PX: Vec2 ) Vec2 {
     // Flip y so it increases upward
     return Vec2 {
