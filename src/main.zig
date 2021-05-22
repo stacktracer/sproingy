@@ -163,7 +163,7 @@ fn onRender( glArea_: *GtkGLArea, glContext_: *GdkGLContext, model_: *Model ) ca
             return 0;
         }
     }.run( glArea_, glContext_, model_ ) catch |e| {
-        std.debug.print( "Failed to render: {}\n", .{ e } );
+        std.debug.warn( "Failed to render: {}\n", .{ e } );
         if ( @errorReturnTrace( ) ) |trace| {
             std.debug.dumpStackTrace( trace.* );
         }
@@ -191,7 +191,6 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
             gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 800, 600 );
             gtk_widget_show_all( window );
             try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
-            // FIXME: g_object_unref( window )?
 
             gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
 
