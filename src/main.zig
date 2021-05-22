@@ -227,7 +227,7 @@ pub fn main( ) !void {
         try gtkzConnectHandler( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
     } );
 
-    var args = try ProcessArgs.create( &std.process.args( ), allocator );
+    var args = try ProcessArgs.create( allocator );
     defer args.deinit( );
     const runResult = g_application_run( @ptrCast( *GApplication, app ), args.argc, args.argv );
     if ( runResult != 0 ) {

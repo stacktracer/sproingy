@@ -86,26 +86,43 @@ pub fn xywh( x: f64, y: f64, w: f64, h: f64 ) Interval2 {
 }
 
 pub const ProcessArgs = struct {
-    list: ArrayList( [*c]u8 ),
+    allocator: *Allocator,
+    args: ArrayList( [:0]u8 ),
+    argsAsCstrs: ArrayList( [*c]u8 ),
     argc: c_int,
     argv: [*c][*c]u8,
 
-    pub fn create( it: *std.process.ArgIterator, allocator: *Allocator ) !ProcessArgs {
-        var list = ArrayList( [*c]u8 ).init( allocator );
+    pub fn create( allocator: *Allocator ) !ProcessArgs {
+        var it = std.process.args( );
+        defer it.deinit( );
+
+        var args = ArrayList( [:0]u8 ).init( allocator );
+        var argsAsCstrs = ArrayList( [*c]u8 ).init( allocator );
         while ( true ) {
             const arg = try ( it.next( allocator ) orelse break );
-            try list.append( arg );
+            try args.append( arg );
+            try argsAsCstrs.append( arg.ptr );
         }
+
         return ProcessArgs {
-            .list = list,
-            .argc = @intCast( c_int, list.items.len ),
-            .argv = list.items.ptr,
+            .allocator = allocator,
+            .args = args,
+            .argsAsCstrs = argsAsCstrs,
+            .argc = @intCast( c_int, argsAsCstrs.items.len ),
+            .argv = argsAsCstrs.items.ptr,
         };
     }
 
     pub fn deinit( self: *ProcessArgs ) void {
         self.argc = 0;
         self.argv = null;
-        self.list.deinit( );
+
+        // Don't free ptrs in self.argsAsCstrs -- they point to the same memory as slices in self.args
+        self.argsAsCstrs.deinit( );
+
+        for ( self.args.items ) |arg| {
+            self.allocator.free( arg );
+        }
+        self.args.deinit( );
     }
 };
