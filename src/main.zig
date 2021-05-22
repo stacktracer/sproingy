@@ -68,8 +68,7 @@ const Model = struct {
 
 fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
     if ( model.activeDragger == null and ev.button == 1 ) {
-        // Add 0.5 to get pixel center
-        const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
+        const mouse_PX = gtkzMousePos_PX( widget, ev );
         model.activeDragger = findDragger( model.draggers.items, mouse_PX );
         if ( model.activeDragger != null ) {
             model.activeDragger.?.handlePress( mouse_PX );
@@ -81,8 +80,7 @@ fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callc
 
 fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.C) gboolean {
     if ( model.activeDragger != null ) {
-        // Add 0.5 to get pixel center
-        const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
+        const mouse_PX = gtkzMousePos_PX( widget, ev );
         model.activeDragger.?.handleDrag( mouse_PX );
         model.fireRepaint( );
     }
@@ -91,8 +89,7 @@ fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.
 
 fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
     if ( model.activeDragger != null and ev.button == 1 ) {
-        // Add 0.5 to get pixel center
-        const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
+        const mouse_PX = gtkzMousePos_PX( widget, ev );
         model.activeDragger.?.handleRelease( mouse_PX );
         model.activeDragger = null;
         model.fireRepaint( );
@@ -101,7 +98,7 @@ fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) cal
 }
 
 fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll, model: *Model ) callconv(.C) gboolean {
-    const mouse_PX = xy( ev.x + 0.5, ev.y + 0.5 );
+    const mouse_PX = gtkzMousePos_PX( widget, ev );
     const mouse_FRAC = pxToAxisFrac( model.axis, mouse_PX );
     const mouse_XY = model.axis.getBounds( ).fracToValue( mouse_FRAC );
 
