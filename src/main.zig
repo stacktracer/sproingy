@@ -162,9 +162,12 @@ fn onRender( glArea_: *GtkGLArea, glContext_: *GdkGLContext, model_: *Model ) ca
             try model.rootPaintable.painter.glPaint( viewport_PX );
             return 0;
         }
-    }.run( glArea_, glContext_, model_ ) catch {
-        // FIXME: Don't panic
-        std.debug.panic( "Failed to render", .{} );
+    }.run( glArea_, glContext_, model_ ) catch |e| {
+        std.debug.print( "Failed to render: {}\n", .{ e } );
+        if ( @errorReturnTrace( ) ) |trace| {
+            std.debug.dumpStackTrace( trace.* );
+        }
+        return 0;
     };
 }
 
@@ -181,7 +184,6 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
             gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
             gtk_widget_set_can_focus( glArea, 1 );
             try model.widgetsToRepaint.append( glArea );
-            // TODO: g_object_unref( glArea )?
 
             const window = gtk_application_window_new( app );
             gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
@@ -190,6 +192,8 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
             gtk_widget_show_all( window );
             try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
             // TODO: g_object_unref( window )?
+
+            gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
 
             const handlers = [_]GtkzSignalConnection {
                 try gtkzConnect( glArea,               "render", @ptrCast( GCallback, onRender        ), model ),
@@ -203,9 +207,13 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
             };
             try model.handlersToDisconnect.appendSlice( &handlers );
         }
-    }.run( app_, model_ ) catch {
-        // TODO: Show an error dialog
-        std.debug.panic( "Failed to activate", .{} );
+    }.run( app_, model_ ) catch |e| {
+        std.debug.warn( "Failed to activate: {}\n", .{ e } );
+        if ( @errorReturnTrace( ) ) |trace| {
+            std.debug.dumpStackTrace( trace.* );
+        }
+        model_.fireQuit( );
+        model_.deinit( );
     };
 }
 
@@ -240,7 +248,6 @@ pub fn main( ) !void {
     // TODO: Pass argc and argv somehow?
     const runResult = g_application_run( @ptrCast( *GApplication, app ), 0, null );
     if ( runResult != 0 ) {
-        // TODO: Show an error dialog
-        std.debug.panic( "Application exited with code {}", .{ runResult } );
+        std.debug.warn( "Application exited with code {}", .{ runResult } );
     }
 }
