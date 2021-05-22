@@ -86,7 +86,10 @@ pub const DotsPaintable = struct {
 
     fn glDeinit( painter: *Painter ) void {
         const self = @fieldParentPtr( DotsPaintable, "painter", painter );
+
+        // FIXME: Constructor takes an allocator, but there's no non-GL deinit() method
         self.dotCoords.deinit( );
+
         glDeleteProgram( self.prog.program );
         glDeleteVertexArrays( 1, &self.vao );
         glDeleteBuffers( 1, &self.vbo );

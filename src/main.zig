@@ -229,6 +229,7 @@ pub fn main( ) !void {
     var dotsCoords = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
     try dotsPaintable.dotCoords.appendSlice( &dotsCoords );
 
+    // FIXME: Feels wrong to create model here, but deinit it elsewhere
     var model = Model.create( &axis, &gpa.allocator );
     try model.rootPaintable.childPainters.append( &bgPaintable.painter );
     try model.rootPaintable.childPainters.append( &dotsPaintable.painter );
