@@ -9,7 +9,7 @@ pub const GtkzSignalConnection = struct {
     handlerId: gulong,
 };
 
-pub fn gtkzConnect( instance: gpointer, signalName: [*c]const gchar, handler: GCallback, userData: gpointer ) !GtkzSignalConnection {
+pub fn gtkzSignalConnect( instance: gpointer, signalName: [*c]const gchar, handler: GCallback, userData: gpointer ) !GtkzSignalConnection {
     return GtkzSignalConnection {
         .instance = instance,
         .handlerId = try gtkz_signal_connect( instance, signalName, handler, userData ),

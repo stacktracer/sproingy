@@ -195,17 +195,16 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
 
             gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
 
-            const handlers = [_]GtkzSignalConnection {
-                try gtkzConnect( glArea,               "render", @ptrCast( GCallback, onRender        ), model ),
-                try gtkzConnect( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), model ),
-                try gtkzConnect( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), model ),
-                try gtkzConnect( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), model ),
-                try gtkzConnect( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), model ),
-                try gtkzConnect( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), model ),
-                try gtkzConnect( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), model ),
-                try gtkzConnect( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), model ),
-            };
-            try model.handlersToDisconnect.appendSlice( &handlers );
+            try model.handlersToDisconnect.appendSlice( &[_]GtkzSignalConnection {
+                try gtkzSignalConnect( glArea,               "render", @ptrCast( GCallback, onRender        ), model ),
+                try gtkzSignalConnect( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), model ),
+                try gtkzSignalConnect( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), model ),
+                try gtkzSignalConnect( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), model ),
+                try gtkzSignalConnect( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), model ),
+                try gtkzSignalConnect( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), model ),
+                try gtkzSignalConnect( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), model ),
+                try gtkzSignalConnect( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), model ),
+            } );
         }
     }.run( app_, model_ ) catch |e| {
         std.debug.warn( "Failed to activate: {}\n", .{ e } );
@@ -240,10 +239,9 @@ pub fn main( ) !void {
     var app = gtk_application_new( "net.hogye.dots", .G_APPLICATION_FLAGS_NONE );
     defer g_object_unref( app );
 
-    const handlers = [_]GtkzSignalConnection {
-        try gtkzConnect( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
-    };
-    try model.handlersToDisconnect.appendSlice( &handlers );
+    try model.handlersToDisconnect.appendSlice( &[_]GtkzSignalConnection {
+        try gtkzSignalConnect( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
+    } );
 
     var args = ( try createArgsList( &std.process.args( ), &gpa.allocator ) ).items;
     const argc = @intCast( c_int, args.len );
