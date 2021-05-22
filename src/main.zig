@@ -199,6 +199,7 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
 
 pub fn main( ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
+    const allocator = &gpa.allocator;
 
 
     var axis = Axis2.create( xywh( 0, 0, 500, 500 ) );
@@ -207,12 +208,12 @@ pub fn main( ) !void {
     var bgPaintable = ClearPaintable.create( "bg", GL_COLOR_BUFFER_BIT );
     bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
 
-    var dotsPaintable = DotsPaintable.create( "dots", &axis, &gpa.allocator );
+    var dotsPaintable = DotsPaintable.create( "dots", &axis, allocator );
     defer dotsPaintable.deinit( );
     var dotsCoords = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
     try dotsPaintable.dotCoords.appendSlice( &dotsCoords );
 
-    var model = Model.create( &axis, &gpa.allocator );
+    var model = Model.create( &axis, allocator );
     defer model.deinit( );
     try model.rootPaintable.childPainters.append( &bgPaintable.painter );
     try model.rootPaintable.childPainters.append( &dotsPaintable.painter );
@@ -226,7 +227,7 @@ pub fn main( ) !void {
         try gtkzConnectHandler( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
     } );
 
-    var args = try ProcessArgs.create( &std.process.args( ), &gpa.allocator );
+    var args = try ProcessArgs.create( &std.process.args( ), allocator );
     defer args.deinit( );
     const runResult = g_application_run( @ptrCast( *GApplication, app ), args.argc, args.argv );
     if ( runResult != 0 ) {
