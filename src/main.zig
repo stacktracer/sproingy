@@ -18,7 +18,7 @@ const Model = struct {
     activeDragger: ?*Dragger,
     widgetsToRepaint: ArrayList( *GtkWidget ),
     windowsToClose: ArrayList( *GtkWindow ),
-    handlersToDisconnect: ArrayList( GtkzSignalConnection ),
+    handlersToDisconnect: ArrayList( GtkzHandlerConnection ),
 
     pub fn create( axis: *Axis2, allocator: *Allocator ) Model {
         return Model {
@@ -29,34 +29,11 @@ const Model = struct {
             .activeDragger = null,
             .widgetsToRepaint = ArrayList( *GtkWidget ).init( allocator ),
             .windowsToClose = ArrayList( *GtkWindow ).init( allocator ),
-            .handlersToDisconnect = ArrayList( GtkzSignalConnection ).init( allocator ),
+            .handlersToDisconnect = ArrayList( GtkzHandlerConnection ).init( allocator ),
         };
     }
 
-    pub fn fireRepaint( self: *Model ) void {
-        for ( self.widgetsToRepaint.items ) |widget| {
-            gtk_widget_queue_draw( widget );
-        }
-    }
-
-    pub fn fireQuit( self: *Model ) void {
-        for ( self.windowsToClose.items ) |window| {
-            gtk_window_close( window );
-        }
-    }
-
-    pub fn disconnectHandlers( self: *Model ) void {
-        for ( self.handlersToDisconnect.items ) |handler| {
-            g_signal_handler_disconnect( handler.instance, handler.handlerId );
-        }
-        self.handlersToDisconnect.items.len = 0;
-    }
-
     pub fn deinit( self: *Model ) void {
-        if ( glzHasCurrentContext( ) ) {
-            self.rootPaintable.painter.glDeinit( );
-        }
-        self.disconnectHandlers( );
         self.handlersToDisconnect.deinit( );
         self.widgetsToRepaint.deinit( );
         self.windowsToClose.deinit( );
@@ -72,7 +49,7 @@ fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callc
         model.activeDragger = findDragger( model.draggers.items, mouse_PX );
         if ( model.activeDragger != null ) {
             model.activeDragger.?.handlePress( mouse_PX );
-            model.fireRepaint( );
+            gtkzDrawWidgets( model.widgetsToRepaint.items );
         }
     }
     return 1;
@@ -82,7 +59,7 @@ fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.
     if ( model.activeDragger != null ) {
         const mouse_PX = gtkzMousePos_PX( widget, ev );
         model.activeDragger.?.handleDrag( mouse_PX );
-        model.fireRepaint( );
+        gtkzDrawWidgets( model.widgetsToRepaint.items );
     }
     return 1;
 }
@@ -92,7 +69,7 @@ fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) cal
         const mouse_PX = gtkzMousePos_PX( widget, ev );
         model.activeDragger.?.handleRelease( mouse_PX );
         model.activeDragger = null;
-        model.fireRepaint( );
+        gtkzDrawWidgets( model.widgetsToRepaint.items );
     }
     return 1;
 }
@@ -108,7 +85,7 @@ fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll, model: *Model ) callconv(.C
     const scale = xy( zoomFactor*model.axis.x.scale, zoomFactor*model.axis.y.scale );
 
     model.axis.set( mouse_FRAC, mouse_XY, scale );
-    model.fireRepaint( );
+    gtkzDrawWidgets( model.widgetsToRepaint.items );
 
     return 1;
 }
@@ -134,7 +111,7 @@ fn getZoomSteps( ev: *GdkEventScroll ) f64 {
 
 fn onKeyPress( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(.C) gboolean {
     switch ( ev.keyval ) {
-        GDK_KEY_Escape => model.fireQuit( ),
+        GDK_KEY_Escape => gtkzCloseWindows( model.windowsToClose.items ),
         else => {
             // std.debug.print( "  KEY_PRESS: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
         },
@@ -172,7 +149,13 @@ fn onRender( glArea_: *GtkGLArea, glContext_: *GdkGLContext, model_: *Model ) ca
 }
 
 fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, model: *Model ) callconv(.C) gboolean {
-    model.deinit( );
+    gtkzDisconnectHandlers( model.handlersToDisconnect.items );
+    model.handlersToDisconnect.items.len = 0;
+
+    if ( glzHasCurrentContext( ) ) {
+        model.rootPaintable.painter.glDeinit( );
+    }
+
     return 0;
 }
 
@@ -194,15 +177,15 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
 
             gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
 
-            try model.handlersToDisconnect.appendSlice( &[_]GtkzSignalConnection {
-                try gtkzSignalConnect( glArea,               "render", @ptrCast( GCallback, onRender        ), model ),
-                try gtkzSignalConnect( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), model ),
-                try gtkzSignalConnect( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), model ),
-                try gtkzSignalConnect( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), model ),
-                try gtkzSignalConnect( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), model ),
-                try gtkzSignalConnect( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), model ),
-                try gtkzSignalConnect( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), model ),
-                try gtkzSignalConnect( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), model ),
+            try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
+                try gtkzConnectHandler( glArea,               "render", @ptrCast( GCallback, onRender        ), model ),
+                try gtkzConnectHandler( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), model ),
+                try gtkzConnectHandler( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), model ),
+                try gtkzConnectHandler( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), model ),
+                try gtkzConnectHandler( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), model ),
+                try gtkzConnectHandler( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), model ),
+                try gtkzConnectHandler( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), model ),
+                try gtkzConnectHandler( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), model ),
             } );
         }
     }.run( app_, model_ ) catch |e| {
@@ -210,8 +193,7 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
         if ( @errorReturnTrace( ) ) |trace| {
             std.debug.dumpStackTrace( trace.* );
         }
-        model_.fireQuit( );
-        model_.deinit( );
+        gtkzCloseWindows( model_.windowsToClose.items );
     };
 }
 
@@ -226,11 +208,12 @@ pub fn main( ) !void {
     bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
 
     var dotsPaintable = DotsPaintable.create( "dots", &axis, &gpa.allocator );
+    defer dotsPaintable.deinit( );
     var dotsCoords = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
     try dotsPaintable.dotCoords.appendSlice( &dotsCoords );
 
-    // FIXME: Feels wrong to create model here, but deinit it elsewhere
     var model = Model.create( &axis, &gpa.allocator );
+    defer model.deinit( );
     try model.rootPaintable.childPainters.append( &bgPaintable.painter );
     try model.rootPaintable.childPainters.append( &dotsPaintable.painter );
     try model.draggers.append( &axis.dragger );
@@ -239,8 +222,8 @@ pub fn main( ) !void {
     var app = gtk_application_new( "net.hogye.dots", .G_APPLICATION_FLAGS_NONE );
     defer g_object_unref( app );
 
-    try model.handlersToDisconnect.appendSlice( &[_]GtkzSignalConnection {
-        try gtkzSignalConnect( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
+    try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
+        try gtkzConnectHandler( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
     } );
 
     var args = try ProcessArgs.create( &std.process.args( ), &gpa.allocator );
