@@ -12,7 +12,7 @@ pub const PainterContext = struct {
 pub const Painter = struct {
     name: []const u8,
 
-    glResourcesSet: bool = false,
+    glResourcesAreSet: bool = false,
 
     /// Called while the GL context is current, and before the first paint.
     glInitFn: fn ( self: *Painter, pc: *const PainterContext ) anyerror!void,
@@ -24,17 +24,17 @@ pub const Painter = struct {
     glDeinitFn: fn ( self: *Painter ) void,
 
     pub fn glPaint( self: *Painter, pc: *const PainterContext ) !void {
-        if ( !self.glResourcesSet ) {
+        if ( !self.glResourcesAreSet ) {
             try self.glInitFn( self, pc );
-            self.glResourcesSet = true;
+            self.glResourcesAreSet = true;
         }
         return self.glPaintFn( self, pc );
     }
 
     pub fn glDeinit( self: *Painter ) void {
-        if ( self.glResourcesSet ) {
+        if ( self.glResourcesAreSet ) {
             self.glDeinitFn( self );
-            self.glResourcesSet = false;
+            self.glResourcesAreSet = false;
         }
     }
 };
@@ -62,7 +62,12 @@ pub const MultiPaintable = struct {
     fn glPaint( painter: *Painter, pc: *const PainterContext ) !void {
         const self = @fieldParentPtr( MultiPaintable, "painter", painter );
         for ( self.childPainters.items ) |childPainter| {
-            try childPainter.glPaint( pc );
+            childPainter.glPaint( pc ) catch |e| {
+                std.debug.warn( "Failed to paint: painter = {}, error = {}\n", .{ childPainter.name, e } );
+                if ( @errorReturnTrace( ) ) |trace| {
+                    std.debug.dumpStackTrace( trace.* );
+                }
+            };
         }
     }
 
@@ -76,7 +81,7 @@ pub const MultiPaintable = struct {
 
     pub fn deinit( self: *MultiPaintable ) void {
         for ( self.childPainters.items ) |childPainter| {
-            if ( childPainter.glResourcesSet ) {
+            if ( childPainter.glResourcesAreSet ) {
                 std.debug.warn( "glDeinit was never called for painter \"{}\"\n", .{ childPainter.name } );
             }
         }

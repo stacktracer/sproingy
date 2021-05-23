@@ -10,39 +10,66 @@ usingnamespace @import( "util/misc.zig" );
 usingnamespace @import( "util/paint.zig" );
 usingnamespace @import( "dots.zig" );
 
+
+pub const Oneshot = struct {
+    runAndDestroyFn: fn ( self: *Oneshot ) anyerror!void,
+
+    pub fn runAndDestroy( self: *Oneshot ) !void {
+        try self.runAndDestroyFn( self );
+    }
+};
+
+/// Takes ownership of the runner.
+pub fn gtkzInvokeOnce( oneshot: *Oneshot ) void {
+    // FIXME: Call g_source_remove() somewhere
+    const source = g_timeout_add( 0, @ptrCast( GSourceFunc, gtkzRunOnce ), oneshot );
+}
+
+fn gtkzRunOnce( oneshot: *Oneshot ) callconv(.C) guint {
+    oneshot.runAndDestroy( ) catch |e| {
+        std.debug.warn( "Failed to run oneshot: error = {}\n", .{ e } );
+    };
+    return G_SOURCE_REMOVE;
+}
+
+
 const Model = struct {
     allocator: *Allocator,
-    axis: *Axis2,
     rootPaintable: MultiPaintable,
     draggers: ArrayList( *Dragger ),
     activeDragger: ?*Dragger,
+    handlersToDisconnect: ArrayList( GtkzHandlerConnection ),
     widgetsToRepaint: ArrayList( *GtkWidget ),
     windowsToClose: ArrayList( *GtkWindow ),
-    handlersToDisconnect: ArrayList( GtkzHandlerConnection ),
 
-    pub fn create( axis: *Axis2, allocator: *Allocator ) Model {
+    axis: *Axis2,
+    dotsPaintable: *DotsPaintable,
+
+    pub fn create( allocator: *Allocator, axis: *Axis2, dotsPaintable: *DotsPaintable ) Model {
         return Model {
             .allocator = allocator,
-            .axis = axis,
             .rootPaintable = MultiPaintable.create( "root", allocator ),
             .draggers = ArrayList( *Dragger ).init( allocator ),
             .activeDragger = null,
+            .handlersToDisconnect = ArrayList( GtkzHandlerConnection ).init( allocator ),
             .widgetsToRepaint = ArrayList( *GtkWidget ).init( allocator ),
             .windowsToClose = ArrayList( *GtkWindow ).init( allocator ),
-            .handlersToDisconnect = ArrayList( GtkzHandlerConnection ).init( allocator ),
+
+            .axis = axis,
+            .dotsPaintable = dotsPaintable,
         };
     }
 
     pub fn deinit( self: *Model ) void {
+        self.rootPaintable.deinit( );
+        self.draggers.deinit( );
+        self.activeDragger = null;
         if ( self.handlersToDisconnect.items.len > 0 ) {
             std.debug.warn( "Some signal handlers may not have been disconnected: {} remaining\n", .{ self.handlersToDisconnect.items.len } );
         }
         self.handlersToDisconnect.deinit( );
         self.widgetsToRepaint.deinit( );
         self.windowsToClose.deinit( );
-        self.activeDragger = null;
-        self.draggers.deinit( );
-        self.rootPaintable.deinit( );
     }
 };
 
@@ -131,24 +158,20 @@ fn onKeyRelease( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(
     return 1;
 }
 
-fn onRender( glArea_: *GtkGLArea, glContext_: *GdkGLContext, model_: *Model ) callconv(.C) gboolean {
-    return struct {
-        fn run( glArea: *GtkGLArea, glContext: *GdkGLContext, model: *Model ) !gboolean {
-            const pc = PainterContext {
-                .viewport_PX = glzGetViewport_PX( ),
-                .lpxToPx = gtkzScaleFactor( @ptrCast( *GtkWidget, glArea ) ),
-            };
-            model.axis.setViewport_PX( pc.viewport_PX );
-            try model.rootPaintable.painter.glPaint( &pc );
-            return 0;
-        }
-    }.run( glArea_, glContext_, model_ ) catch |e| {
-        std.debug.warn( "Failed to render: {}\n", .{ e } );
-        if ( @errorReturnTrace( ) ) |trace| {
-            std.debug.dumpStackTrace( trace.* );
-        }
-        return 0;
+fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, model: *Model ) callconv(.C) gboolean {
+    const pc = PainterContext {
+        .viewport_PX = glzGetViewport_PX( ),
+        .lpxToPx = gtkzScaleFactor( @ptrCast( *GtkWidget, glArea ) ),
     };
+
+    model.axis.setViewport_PX( pc.viewport_PX );
+
+    model.rootPaintable.painter.glPaint( &pc ) catch |e| {
+        // MultiPaintable shouldn't ever return an error
+        std.debug.warn( "Failed to paint root: painter = {}, error = {}", .{ model.rootPaintable.painter.name, e } );
+    };
+
+    return 0;
 }
 
 fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, model: *Model ) callconv(.C) gboolean {
@@ -161,6 +184,55 @@ fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, model: *Model ) callconv(
 
     return 0;
 }
+
+fn runSimulation( model: *Model ) !void {
+    var g = std.rand.Xoroshiro128.init( 12345 ).random;
+
+    // FIXME: Start with some dots
+
+    while ( true ) {
+        std.time.sleep( 10000000 );
+
+        // FIXME: Update each dot, instead of appending a new one
+        var dotAppender = try DotAppender.createAndInit( model.allocator, model, .{
+            .x = -1.0 + 2.0*g.float( f64 ),
+            .y = -1.0 + 2.0*g.float( f64 ),
+        } );
+        gtkzInvokeOnce( &dotAppender.oneshot );
+    }
+}
+
+const DotAppender = struct {
+    selfAllocator: *Allocator,
+    model: *Model,
+    dot: Vec2,
+    oneshot: Oneshot,
+
+    pub fn createAndInit( selfAllocator: *Allocator, model: *Model, dot: Vec2 ) !*DotAppender {
+        const self = try selfAllocator.create( DotAppender );
+        self.* = .{
+            .selfAllocator = selfAllocator,
+            .model = model,
+            .dot = dot,
+            .oneshot = .{
+                .runAndDestroyFn = runAndDestroy,
+            },
+        };
+        return self;
+    }
+
+    fn runAndDestroy( oneshot: *Oneshot ) !void {
+        const self = @fieldParentPtr( DotAppender, "oneshot", oneshot );
+        try self.model.dotsPaintable.dotCoords.appendSlice( &[_]GLfloat {
+            @floatCast( GLfloat, self.dot.x ),
+            @floatCast( GLfloat, self.dot.y ),
+        } );
+        self.model.dotsPaintable.dotCoordsModified = true;
+        gtkzDrawWidgets( self.model.widgetsToRepaint.items );
+
+        self.selfAllocator.destroy( self );
+    }
+};
 
 fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
     struct {
@@ -190,6 +262,10 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
                 try gtkzConnectHandler( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), model ),
                 try gtkzConnectHandler( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), model ),
             } );
+
+            // FIXME: Dispose of thread somehow -- maybe "running" flag in model, and thread.wait() somewhere
+            const thread = try std.Thread.spawn( model, runSimulation );
+
         }
     }.run( app_, model_ ) catch |e| {
         std.debug.warn( "Failed to activate: {}\n", .{ e } );
@@ -213,10 +289,8 @@ pub fn main( ) !void {
 
     var dotsPaintable = DotsPaintable.create( "dots", &axis, allocator );
     defer dotsPaintable.deinit( );
-    var dotsCoords = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
-    try dotsPaintable.dotCoords.appendSlice( &dotsCoords );
 
-    var model = Model.create( &axis, allocator );
+    var model = Model.create( allocator, &axis, &dotsPaintable );
     defer model.deinit( );
     try model.rootPaintable.childPainters.append( &bgPaintable.painter );
     try model.rootPaintable.childPainters.append( &dotsPaintable.painter );
