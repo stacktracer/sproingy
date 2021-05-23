@@ -1,6 +1,6 @@
-diff -Naur include/glib-2.0/gobject/gsignal.h.OLD include/glib-2.0/gobject/gsignal.h
---- include/glib-2.0/gobject/gsignal.h.OLD	2021-05-11 09:19:11.000000000 -0400
-+++ include/glib-2.0/gobject/gsignal.h	2021-05-20 21:19:53.019098537 -0400
+diff -Naur include/gobject/gsignal.h.OLD include/gobject/gsignal.h
+--- include/gobject/gsignal.h.OLD	2021-05-11 09:19:11.000000000 -0400
++++ include/gobject/gsignal.h	2021-05-20 21:19:53.019098537 -0400
 @@ -159,6 +159,7 @@
   */
  typedef enum
@@ -9,9 +9,9 @@ diff -Naur include/glib-2.0/gobject/gsignal.h.OLD include/glib-2.0/gobject/gsign
    G_CONNECT_AFTER	= 1 << 0,
    G_CONNECT_SWAPPED	= 1 << 1
  } GConnectFlags;
-diff -Naur include/gtk-3.0/gdk/gdkevents.h.OLD include/gtk-3.0/gdk/gdkevents.h
---- include/gtk-3.0/gdk/gdkevents.h.OLD	2021-04-23 06:21:31.000000000 -0400
-+++ include/gtk-3.0/gdk/gdkevents.h	2021-05-20 21:37:51.436799773 -0400
+diff -Naur include/gdk/gdkevents.h.OLD include/gdk/gdkevents.h
+--- include/gdk/gdkevents.h.OLD	2021-04-23 06:21:31.000000000 -0400
++++ include/gdk/gdkevents.h	2021-05-20 21:37:51.436799773 -0400
 @@ -860,7 +860,7 @@
    gdouble x_root, y_root;
    gdouble delta_x;
