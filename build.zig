@@ -2,7 +2,6 @@ const std = @import( "std" );
 const Builder = std.build.Builder;
 
 pub fn build( b: *Builder ) void {
-    // TODO: Does this default to debug mode, in spite of the "release" in there?
     const mode = b.standardReleaseOptions( );
 
     const exe = b.addExecutable( "dummy", "src/main.zig" );
