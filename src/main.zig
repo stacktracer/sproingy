@@ -1,269 +1,239 @@
 const std = @import( "std" );
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 const pow = std.math.pow;
-const print = std.debug.print;
-const u = @import( "util.zig" );
-const xy = u.xy;
-const xywh = u.xywh;
-const g = @import( "gl.zig" );
-const s = @import( "sdl2.zig" );
-const a = @import( "axis.zig" );
-const Axis2 = a.Axis2;
-const lpxToAxisFrac = a.lpxToAxisFrac;
-const Draggable = a.Draggable;
-const Dragger = a.Dragger;
-const findDragger = a.findDragger;
+usingnamespace @import( "util/axis.zig" );
+usingnamespace @import( "util/drag.zig" );
+usingnamespace @import( "util/glz.zig" );
+usingnamespace @import( "util/gtkz.zig" );
+usingnamespace @import( "util/misc.zig" );
+usingnamespace @import( "util/paint.zig" );
+usingnamespace @import( "dots.zig" );
 
-const DummyProgram = struct {
-    program: g.GLuint,
+const Model = struct {
+    allocator: *Allocator,
+    axis: *Axis2,
+    rootPaintable: MultiPaintable,
+    draggers: ArrayList( *Dragger ),
+    activeDragger: ?*Dragger,
+    widgetsToRepaint: ArrayList( *GtkWidget ),
+    windowsToClose: ArrayList( *GtkWindow ),
+    handlersToDisconnect: ArrayList( GtkzHandlerConnection ),
 
-    XY_BOUNDS: g.GLint,
-    SIZE_PX: g.GLint,
-    RGBA: g.GLint,
+    pub fn create( axis: *Axis2, allocator: *Allocator ) Model {
+        return Model {
+            .allocator = allocator,
+            .axis = axis,
+            .rootPaintable = MultiPaintable.create( "root", allocator ),
+            .draggers = ArrayList( *Dragger ).init( allocator ),
+            .activeDragger = null,
+            .widgetsToRepaint = ArrayList( *GtkWidget ).init( allocator ),
+            .windowsToClose = ArrayList( *GtkWindow ).init( allocator ),
+            .handlersToDisconnect = ArrayList( GtkzHandlerConnection ).init( allocator ),
+        };
+    }
 
-    /// x_XAXIS, y_YAXIS
-    inCoords: g.GLuint
+    pub fn deinit( self: *Model ) void {
+        if ( self.handlersToDisconnect.items.len > 0 ) {
+            std.debug.warn( "Some signal handlers may not have been disconnected: {} remaining\n", .{ self.handlersToDisconnect.items.len } );
+        }
+        self.handlersToDisconnect.deinit( );
+        self.widgetsToRepaint.deinit( );
+        self.windowsToClose.deinit( );
+        self.activeDragger = null;
+        self.draggers.deinit( );
+        self.rootPaintable.deinit( );
+    }
 };
 
-fn createDummyProgram( ) !DummyProgram {
-    const vertSource =
-        \\#version 150 core
-        \\
-        \\vec2 min2D( vec4 interval2D )
-        \\{
-        \\    return interval2D.xy;
-        \\}
-        \\
-        \\vec2 span2D( vec4 interval2D )
-        \\{
-        \\    return interval2D.zw;
-        \\}
-        \\
-        \\vec2 coordsToNdc2D( vec2 coords, vec4 bounds )
-        \\{
-        \\    vec2 frac = ( coords - min2D( bounds ) ) / span2D( bounds );
-        \\    return ( -1.0 + 2.0*frac );
-        \\}
-        \\
-        \\uniform vec4 XY_BOUNDS;
-        \\uniform float SIZE_PX;
-        \\
-        \\// x_XAXIS, y_YAXIS
-        \\in vec2 inCoords;
-        \\
-        \\void main( void ) {
-        \\    vec2 xy_XYAXIS = inCoords.xy;
-        \\    gl_Position = vec4( coordsToNdc2D( xy_XYAXIS, XY_BOUNDS ), 0.0, 1.0 );
-        \\    gl_PointSize = SIZE_PX;
-        \\}
-    ;
+fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
+    if ( model.activeDragger == null and ev.button == 1 ) {
+        const mouse_PX = gtkzMousePos_PX( widget, ev );
+        model.activeDragger = findDragger( model.draggers.items, mouse_PX );
+        if ( model.activeDragger != null ) {
+            model.activeDragger.?.handlePress( mouse_PX );
+            gtkzDrawWidgets( model.widgetsToRepaint.items );
+        }
+    }
+    return 1;
+}
 
-    const fragSource =
-        \\#version 150 core
-        \\precision lowp float;
-        \\
-        \\const float FEATHER_PX = 0.9;
-        \\
-        \\uniform float SIZE_PX;
-        \\uniform vec4 RGBA;
-        \\
-        \\out vec4 outRgba;
-        \\
-        \\void main( void ) {
-        \\    vec2 xy_NPC = -1.0 + 2.0*gl_PointCoord;
-        \\    float r_NPC = sqrt( dot( xy_NPC, xy_NPC ) );
-        \\
-        \\    float pxToNpc = 2.0 / SIZE_PX;
-        \\    float rOuter_NPC = 1.0 - 0.5*pxToNpc;
-        \\    float rInner_NPC = rOuter_NPC - FEATHER_PX*pxToNpc;
-        \\    float mask = smoothstep( rOuter_NPC, rInner_NPC, r_NPC );
-        \\
-        \\    float alpha = mask * RGBA.a;
-        \\    outRgba = vec4( alpha*RGBA.rgb, alpha );
-        \\}
-    ;
+fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.C) gboolean {
+    if ( model.activeDragger != null ) {
+        const mouse_PX = gtkzMousePos_PX( widget, ev );
+        model.activeDragger.?.handleDrag( mouse_PX );
+        gtkzDrawWidgets( model.widgetsToRepaint.items );
+    }
+    return 1;
+}
 
-    const dProgram = try g.createProgram( vertSource, fragSource );
-    return DummyProgram {
-        .program = dProgram,
-        .XY_BOUNDS = g.glGetUniformLocation( dProgram, "XY_BOUNDS" ),
-        .SIZE_PX = g.glGetUniformLocation( dProgram, "SIZE_PX" ),
-        .RGBA = g.glGetUniformLocation( dProgram, "RGBA" ),
-        .inCoords = @intCast( g.GLuint, g.glGetAttribLocation( dProgram, "inCoords" ) ),
+fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
+    if ( model.activeDragger != null and ev.button == 1 ) {
+        const mouse_PX = gtkzMousePos_PX( widget, ev );
+        model.activeDragger.?.handleRelease( mouse_PX );
+        model.activeDragger = null;
+        gtkzDrawWidgets( model.widgetsToRepaint.items );
+    }
+    return 1;
+}
+
+fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll, model: *Model ) callconv(.C) gboolean {
+    const mouse_PX = gtkzMousePos_PX( widget, ev );
+    const mouse_FRAC = pxToAxisFrac( model.axis, mouse_PX );
+    const mouse_XY = model.axis.getBounds( ).fracToValue( mouse_FRAC );
+
+    const zoomStepFactor = 1.12;
+    const zoomSteps = getZoomSteps( ev );
+    const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
+    const scale = xy( zoomFactor*model.axis.x.scale, zoomFactor*model.axis.y.scale );
+
+    model.axis.set( mouse_FRAC, mouse_XY, scale );
+    gtkzDrawWidgets( model.widgetsToRepaint.items );
+
+    return 1;
+}
+
+fn getZoomSteps( ev: *GdkEventScroll ) f64 {
+    var direction: GdkScrollDirection = undefined;
+    if ( gdk_event_get_scroll_direction( @ptrCast( *GdkEvent, ev ), &direction ) != 0 ) {
+        return switch ( direction ) {
+            .GDK_SCROLL_UP => 1.0,
+            .GDK_SCROLL_DOWN => -1.0,
+            else => 0.0,
+        };
+    }
+
+    var xDelta: f64 = undefined;
+    var yDelta: f64 = undefined;
+    if ( gdk_event_get_scroll_deltas( @ptrCast( *GdkEvent, ev ), &xDelta, &yDelta ) != 0 ) {
+        return yDelta;
+    }
+
+    return 0.0;
+}
+
+fn onKeyPress( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(.C) gboolean {
+    switch ( ev.keyval ) {
+        GDK_KEY_Escape => gtkzCloseWindows( model.windowsToClose.items ),
+        else => {
+            // std.debug.print( "  KEY_PRESS: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
+        },
+    }
+    return 1;
+}
+
+fn onKeyRelease( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(.C) gboolean {
+    switch ( ev.keyval ) {
+        else => {
+            // std.debug.print( "KEY_RELEASE: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
+        },
+    }
+    return 1;
+}
+
+fn onRender( glArea_: *GtkGLArea, glContext_: *GdkGLContext, model_: *Model ) callconv(.C) gboolean {
+    return struct {
+        fn run( glArea: *GtkGLArea, glContext: *GdkGLContext, model: *Model ) !gboolean {
+            const pc = PainterContext {
+                .viewport_PX = glzGetViewport_PX( ),
+                .lpxToPx = gtkzScaleFactor( @ptrCast( *GtkWidget, glArea ) ),
+            };
+            model.axis.setViewport_PX( pc.viewport_PX );
+            try model.rootPaintable.painter.glPaint( &pc );
+            return 0;
+        }
+    }.run( glArea_, glContext_, model_ ) catch |e| {
+        std.debug.warn( "Failed to render: {}\n", .{ e } );
+        if ( @errorReturnTrace( ) ) |trace| {
+            std.debug.dumpStackTrace( trace.* );
+        }
+        return 0;
     };
 }
 
-pub fn main( ) !u8 {
+fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, model: *Model ) callconv(.C) gboolean {
+    gtkzDisconnectHandlers( model.handlersToDisconnect.items );
+    model.handlersToDisconnect.items.len = 0;
 
-    // SDL setup
-    //
-
-    try s.initSDL( s.SDL_INIT_VIDEO );
-    defer s.SDL_Quit( );
-
-    try s.setGLAttr( .SDL_GL_DOUBLEBUFFER, 1 );
-    try s.setGLAttr( .SDL_GL_ACCELERATED_VISUAL, 1 );
-    try s.setGLAttr( .SDL_GL_RED_SIZE, 8 );
-    try s.setGLAttr( .SDL_GL_GREEN_SIZE, 8 );
-    try s.setGLAttr( .SDL_GL_BLUE_SIZE, 8 );
-    try s.setGLAttr( .SDL_GL_ALPHA_SIZE, 8 );
-    try s.setGLAttr( .SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
-    try s.setGLAttr( .SDL_GL_CONTEXT_MINOR_VERSION, 2 );
-    try s.setGLAttr( .SDL_GL_CONTEXT_PROFILE_MASK, s.SDL_GL_CONTEXT_PROFILE_CORE );
-
-    // TODO: How well does SDL2 support hidpi, in practice?
-    const window = try s.createWindow( "Dummy", s.SDL_WINDOWPOS_UNDEFINED, s.SDL_WINDOWPOS_UNDEFINED, 800, 600, s.SDL_WINDOW_OPENGL | s.SDL_WINDOW_ALLOW_HIGHDPI | s.SDL_WINDOW_RESIZABLE | s.SDL_WINDOW_SHOWN );
-    const windowID = try s.getWindowID( window );
-    defer s.SDL_DestroyWindow( window );
-
-    const context = s.SDL_GL_CreateContext( window );
-    defer s.SDL_GL_DeleteContext( context );
-
-    try s.makeGLCurrent( window, context );
-    try s.setGLSwapInterval( 0 );
-
-
-    // GL setup
-    //
-
-    var vao: g.GLuint = 0;
-    g.glGenVertexArrays( 1, &vao );
-    defer g.glDeleteVertexArrays( 1, &vao );
-    g.glBindVertexArray( vao );
-
-
-    // Application state
-    //
-
-    var frameSize = s.getFrameSize( window );
-    var axis = Axis2.create( frameSize.asViewport_PX( ) );
-    axis.setBounds( xywh( -1.0, -1.0, 2.0, 2.0 ) );
-    var mouseFrac = xy( 0.5, 0.5 );
-    var draggables = [_]*Draggable{ &axis.draggable };
-    var dragger: ?*Dragger = null;
-
-    const hVertexCoords = [_][2]g.GLfloat{
-        [_]g.GLfloat{ 0.0, 0.0 },
-        [_]g.GLfloat{ 0.5, 0.0 },
-        [_]g.GLfloat{ 0.0, 0.5 },
-    };
-    var dVertexCoords = @as( g.GLuint, 0 );
-    g.glGenBuffers( 1, &dVertexCoords );
-    g.glBindBuffer( g.GL_ARRAY_BUFFER, dVertexCoords );
-    g.glBufferData( g.GL_ARRAY_BUFFER, hVertexCoords.len*2*@sizeOf( g.GLfloat ), @ptrCast( *const c_void, &hVertexCoords[0][0] ), g.GL_STATIC_DRAW );
-
-    const dProgram = try createDummyProgram( );
-
-
-    // Render loop
-    //
-
-    var running = true;
-    while ( running ) {
-        frameSize = s.getFrameSize( window );
-        g.glViewport( 0, 0, frameSize.w_PX, frameSize.h_PX );
-        axis.setViewport_PX( frameSize.asViewport_PX( ) );
-        const bounds = axis.getBounds( );
-
-        g.glClearColor( 0.0, 0.0, 0.0, 1.0 );
-        g.glClear( g.GL_COLOR_BUFFER_BIT );
-
-        {
-            g.enablePremultipliedAlphaBlending( );
-            defer g.disableBlending( );
-
-            g.glUseProgram( dProgram.program );
-            defer g.glUseProgram( 0 );
-
-            g.glEnable( g.GL_VERTEX_PROGRAM_POINT_SIZE );
-            defer g.glDisable( g.GL_VERTEX_PROGRAM_POINT_SIZE );
-
-            g.glUniformInterval2( dProgram.XY_BOUNDS, bounds );
-            g.glUniform1f( dProgram.SIZE_PX, 15 );
-            g.glUniform4f( dProgram.RGBA, 1.0, 0.0, 0.0, 1.0 );
-            g.glBindBuffer( g.GL_ARRAY_BUFFER, dVertexCoords );
-            g.glEnableVertexAttribArray( dProgram.inCoords );
-            g.glVertexAttribPointer( dProgram.inCoords, 2, g.GL_FLOAT, g.GL_FALSE, 0, null );
-            g.glDrawArrays( g.GL_POINTS, 0, hVertexCoords.len );
-        }
-
-        s.SDL_GL_SwapWindow( window );
-        s.SDL_Delay( 1 );
-
-        while ( true ) {
-            var event: s.SDL_Event = undefined;
-            if ( s.SDL_PollEvent( &event ) == 0 ) {
-                break;
-            }
-            else {
-                switch ( event.type ) {
-                    s.SDL_QUIT => running = false,
-                    s.SDL_KEYDOWN => {
-                        const ev = event.key;
-                        if ( ev.windowID == windowID ) {
-                            switch ( ev.keysym.sym ) {
-                                s.SDLK_ESCAPE => running = false,
-                                s.SDLK_w => {
-                                    if ( @intCast( c_int, ev.keysym.mod ) & s.KMOD_CTRL != 0 ) {
-                                        running = false;
-                                    }
-                                },
-                                else => {}
-                            }
-                        }
-                    },
-                    s.SDL_MOUSEBUTTONDOWN => {
-                        const ev = event.button;
-                        if ( ev.windowID == windowID and ev.button == s.SDL_BUTTON_LEFT ) {
-                            // Really want SDL_CaptureMouse instead, but it is flaky
-                            s.setMouseConfinedToWindow( window, true );
-                            mouseFrac = lpxToAxisFrac( &axis, ev.x, ev.y, frameSize.xDpr, frameSize.yDpr );
-                            // Despite the "ev.which" field, SDL2 doesn't really support multi-cursor
-                            dragger = findDragger( draggables[0..], &axis, mouseFrac );
-                            if ( dragger != null ) {
-                                dragger.?.handlePress( &axis, mouseFrac );
-                            }
-                        }
-                    },
-                    s.SDL_MOUSEMOTION => {
-                        // TODO: Maybe coalesce mouse moves, but don't mix moves and drags
-                        const ev = event.motion;
-                        if ( ev.windowID == windowID ) {
-                            mouseFrac = lpxToAxisFrac( &axis, ev.x, ev.y, frameSize.xDpr, frameSize.yDpr );
-                            if ( dragger != null ) {
-                                dragger.?.handleDrag( &axis, mouseFrac );
-                            }
-                        }
-                    },
-                    s.SDL_MOUSEBUTTONUP => {
-                        const ev = event.button;
-                        if ( ev.windowID == windowID and ev.button == s.SDL_BUTTON_LEFT ) {
-                            s.setMouseConfinedToWindow( window, false );
-                            mouseFrac = lpxToAxisFrac( &axis, ev.x, ev.y, frameSize.xDpr, frameSize.yDpr );
-                            if ( dragger != null ) {
-                                dragger.?.handleRelease( &axis, mouseFrac );
-                                dragger = null;
-                            }
-                        }
-                    },
-                    s.SDL_MOUSEWHEEL => {
-                        const ev = event.wheel;
-                        if ( ev.windowID == windowID ) {
-                            var zoomSteps = ev.y;
-                            if ( ev.direction == s.SDL_MOUSEWHEEL_FLIPPED ) {
-                                zoomSteps = -zoomSteps;
-                            }
-                            const zoomFactor = pow( f64, 1.12, @intToFloat( f64, zoomSteps ) );
-                            const frac = mouseFrac;
-                            const coord = bounds.fracToValue( frac );
-                            const scale = xy( zoomFactor*axis.x.scale, zoomFactor*axis.y.scale );
-                            axis.set( frac, coord, scale );
-                        }
-                    },
-                    else => {}
-                }
-            }
-        }
+    if ( glzHasCurrentContext( ) ) {
+        model.rootPaintable.painter.glDeinit( );
     }
 
     return 0;
+}
+
+fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
+    struct {
+        fn run( app: *GtkApplication, model: *Model ) !void {
+            const glArea = gtk_gl_area_new( );
+            gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
+            gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
+            gtk_widget_set_can_focus( glArea, 1 );
+            try model.widgetsToRepaint.append( glArea );
+
+            const window = gtk_application_window_new( app );
+            gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
+            gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Dots" );
+            gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 800, 600 );
+            gtk_widget_show_all( window );
+            try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
+
+            gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
+
+            try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
+                try gtkzConnectHandler( glArea,               "render", @ptrCast( GCallback, onRender        ), model ),
+                try gtkzConnectHandler( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), model ),
+                try gtkzConnectHandler( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), model ),
+                try gtkzConnectHandler( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), model ),
+                try gtkzConnectHandler( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), model ),
+                try gtkzConnectHandler( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), model ),
+                try gtkzConnectHandler( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), model ),
+                try gtkzConnectHandler( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), model ),
+            } );
+        }
+    }.run( app_, model_ ) catch |e| {
+        std.debug.warn( "Failed to activate: {}\n", .{ e } );
+        if ( @errorReturnTrace( ) ) |trace| {
+            std.debug.dumpStackTrace( trace.* );
+        }
+        gtkzCloseWindows( model_.windowsToClose.items );
+    };
+}
+
+pub fn main( ) !void {
+    var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
+    const allocator = &gpa.allocator;
+
+
+    var axis = Axis2.create( xywh( 0, 0, 500, 500 ) );
+    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 200, 200 ) );
+
+    var bgPaintable = ClearPaintable.create( "bg", GL_COLOR_BUFFER_BIT );
+    bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
+
+    var dotsPaintable = DotsPaintable.create( "dots", &axis, allocator );
+    defer dotsPaintable.deinit( );
+    var dotsCoords = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
+    try dotsPaintable.dotCoords.appendSlice( &dotsCoords );
+
+    var model = Model.create( &axis, allocator );
+    defer model.deinit( );
+    try model.rootPaintable.childPainters.append( &bgPaintable.painter );
+    try model.rootPaintable.childPainters.append( &dotsPaintable.painter );
+    try model.draggers.append( &axis.dragger );
+
+
+    var app = gtk_application_new( "net.hogye.dots", .G_APPLICATION_FLAGS_NONE );
+    defer g_object_unref( app );
+
+    try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
+        try gtkzConnectHandler( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
+    } );
+
+    var args = try ProcessArgs.create( allocator );
+    defer args.deinit( );
+    const runResult = g_application_run( @ptrCast( *GApplication, app ), args.argc, args.argv );
+    if ( runResult != 0 ) {
+        std.debug.warn( "Application exited with code {}", .{ runResult } );
+    }
 }
