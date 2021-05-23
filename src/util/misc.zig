@@ -2,6 +2,14 @@ const std = @import( "std" );
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
+pub const Runnable = struct {
+    runFn: fn ( self: *Runnable ) anyerror!void,
+
+    pub fn run( self: *Runnable ) !void {
+        try self.runFn( self );
+    }
+};
+
 pub fn range( start: usize, stop: usize ) RangeIterator {
     return RangeIterator {
         .curr = start,

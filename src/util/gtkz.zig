@@ -1,3 +1,4 @@
+const std = @import( "std" );
 usingnamespace @import( "misc.zig" );
 pub usingnamespace @import( "c.zig" );
 
@@ -70,4 +71,17 @@ pub fn gtkz_signal_connect_data( instance: gpointer, signalName: [*c]const gchar
         0 => GtkzError.GenericFailure,
         else => handlerId,
     };
+}
+
+/// Takes ownership of the runner.
+pub fn gtkzInvokeOnce( runnable: *Runnable ) void {
+    // FIXME: Call g_source_remove() somewhere
+    const source = g_timeout_add( 0, @ptrCast( GSourceFunc, gtkzRunOnce ), runnable );
+}
+
+fn gtkzRunOnce( runnable: *Runnable ) callconv(.C) guint {
+    runnable.run( ) catch |e| {
+        std.debug.warn( "Failed to run: error = {}\n", .{ e } );
+    };
+    return G_SOURCE_REMOVE;
 }

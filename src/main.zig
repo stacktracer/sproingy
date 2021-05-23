@@ -10,29 +10,6 @@ usingnamespace @import( "util/misc.zig" );
 usingnamespace @import( "util/paint.zig" );
 usingnamespace @import( "dots.zig" );
 
-
-pub const Runnable = struct {
-    runFn: fn ( self: *Runnable ) anyerror!void,
-
-    pub fn run( self: *Runnable ) !void {
-        try self.runFn( self );
-    }
-};
-
-/// Takes ownership of the runner.
-pub fn gtkzInvokeOnce( runnable: *Runnable ) void {
-    // FIXME: Call g_source_remove() somewhere
-    const source = g_timeout_add( 0, @ptrCast( GSourceFunc, gtkzRunOnce ), runnable );
-}
-
-fn gtkzRunOnce( runnable: *Runnable ) callconv(.C) guint {
-    runnable.run( ) catch |e| {
-        std.debug.warn( "Failed to run: error = {}\n", .{ e } );
-    };
-    return G_SOURCE_REMOVE;
-}
-
-
 const Model = struct {
     allocator: *Allocator,
     rootPaintable: MultiPaintable,
