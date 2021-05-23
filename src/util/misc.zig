@@ -2,6 +2,26 @@ const std = @import( "std" );
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
+pub fn range( start: usize, stop: usize ) RangeIterator {
+    return RangeIterator {
+        .curr = start,
+        .stop = stop,
+    };
+}
+
+const RangeIterator = struct {
+    curr: usize,
+    stop: usize,
+
+    pub fn next( self: *RangeIterator ) ?usize {
+        if ( self.curr < self.stop ) {
+            defer self.curr += 1;
+            return self.curr;
+        }
+        return null;
+    }
+};
+
 pub const Vec2 = struct {
     x: f64,
     y: f64,

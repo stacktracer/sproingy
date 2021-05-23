@@ -11,23 +11,23 @@ usingnamespace @import( "util/paint.zig" );
 usingnamespace @import( "dots.zig" );
 
 
-pub const Oneshot = struct {
-    runAndDestroyFn: fn ( self: *Oneshot ) anyerror!void,
+pub const Runnable = struct {
+    runFn: fn ( self: *Runnable ) anyerror!void,
 
-    pub fn runAndDestroy( self: *Oneshot ) !void {
-        try self.runAndDestroyFn( self );
+    pub fn run( self: *Runnable ) !void {
+        try self.runFn( self );
     }
 };
 
 /// Takes ownership of the runner.
-pub fn gtkzInvokeOnce( oneshot: *Oneshot ) void {
+pub fn gtkzInvokeOnce( runnable: *Runnable ) void {
     // FIXME: Call g_source_remove() somewhere
-    const source = g_timeout_add( 0, @ptrCast( GSourceFunc, gtkzRunOnce ), oneshot );
+    const source = g_timeout_add( 0, @ptrCast( GSourceFunc, gtkzRunOnce ), runnable );
 }
 
-fn gtkzRunOnce( oneshot: *Oneshot ) callconv(.C) guint {
-    oneshot.runAndDestroy( ) catch |e| {
-        std.debug.warn( "Failed to run oneshot: error = {}\n", .{ e } );
+fn gtkzRunOnce( runnable: *Runnable ) callconv(.C) guint {
+    runnable.run( ) catch |e| {
+        std.debug.warn( "Failed to run: error = {}\n", .{ e } );
     };
     return G_SOURCE_REMOVE;
 }
@@ -186,51 +186,58 @@ fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, model: *Model ) callconv(
 }
 
 fn runSimulation( model: *Model ) !void {
-    var g = std.rand.Xoroshiro128.init( 12345 ).random;
+    var g = std.rand.Pcg.init( 12345 ).random;
 
-    // FIXME: Start with some dots
+    var dots = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
 
     while ( true ) {
-        std.time.sleep( 10000000 );
+        var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, &dots );
+        gtkzInvokeOnce( &dotsUpdater.runnable );
 
-        // FIXME: Update each dot, instead of appending a new one
-        var dotAppender = try DotAppender.createAndInit( model.allocator, model, .{
-            .x = -1.0 + 2.0*g.float( f64 ),
-            .y = -1.0 + 2.0*g.float( f64 ),
-        } );
-        gtkzInvokeOnce( &dotAppender.oneshot );
+        const nextUpdate_PMILLIS = std.time.milliTimestamp( ) + 10;
+        while ( std.time.milliTimestamp( ) < nextUpdate_PMILLIS ) {
+            var dotIndices = range( 0, @divTrunc( dots.len, 2 ) );
+            while ( dotIndices.next( ) ) |dotIndex| {
+                // FIXME: Move dots in some interesting way
+                dots[ 2*dotIndex + 0 ] += @floatCast( GLfloat, 1e-4*( -1.0 + 2.0*g.float( f64 ) ) );
+                dots[ 2*dotIndex + 1 ] += @floatCast( GLfloat, 1e-4*( -1.0 + 2.0*g.float( f64 ) ) );
+            }
+        }
     }
 }
 
-const DotAppender = struct {
-    selfAllocator: *Allocator,
+const DotsUpdater = struct {
+    allocator: *Allocator,
     model: *Model,
-    dot: Vec2,
-    oneshot: Oneshot,
+    dots: []GLfloat,
+    runnable: Runnable,
 
-    pub fn createAndInit( selfAllocator: *Allocator, model: *Model, dot: Vec2 ) !*DotAppender {
-        const self = try selfAllocator.create( DotAppender );
+    pub fn createAndInit( allocator: *Allocator, model: *Model, dots: []GLfloat ) !*DotsUpdater {
+        var dotsCopy = try allocator.alloc( GLfloat, dots.len );
+        std.mem.copy( GLfloat, dotsCopy, dots );
+
+        const self = try allocator.create( DotsUpdater );
         self.* = .{
-            .selfAllocator = selfAllocator,
+            .allocator = allocator,
             .model = model,
-            .dot = dot,
-            .oneshot = .{
-                .runAndDestroyFn = runAndDestroy,
+            .dots = dotsCopy,
+            .runnable = .{
+                .runFn = runAndDestroySelf,
             },
         };
         return self;
     }
 
-    fn runAndDestroy( oneshot: *Oneshot ) !void {
-        const self = @fieldParentPtr( DotAppender, "oneshot", oneshot );
-        try self.model.dotsPaintable.dotCoords.appendSlice( &[_]GLfloat {
-            @floatCast( GLfloat, self.dot.x ),
-            @floatCast( GLfloat, self.dot.y ),
-        } );
+    fn runAndDestroySelf( runnable: *Runnable ) !void {
+        const self = @fieldParentPtr( DotsUpdater, "runnable", runnable );
+
+        // FIXME: Don't do any of this if the model has been deinited
+        try self.model.dotsPaintable.dotCoords.resize( self.dots.len );
+        try self.model.dotsPaintable.dotCoords.replaceRange( 0, self.dots.len, self.dots );
         self.model.dotsPaintable.dotCoordsModified = true;
         gtkzDrawWidgets( self.model.widgetsToRepaint.items );
 
-        self.selfAllocator.destroy( self );
+        self.allocator.destroy( self );
     }
 };
 
