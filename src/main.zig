@@ -34,6 +34,9 @@ const Model = struct {
     }
 
     pub fn deinit( self: *Model ) void {
+        if ( self.handlersToDisconnect.items.len > 0 ) {
+            std.debug.warn( "Some signal handlers may not have been disconnected: {} remaining\n", .{ self.handlersToDisconnect.items.len } );
+        }
         self.handlersToDisconnect.deinit( );
         self.widgetsToRepaint.deinit( );
         self.windowsToClose.deinit( );
