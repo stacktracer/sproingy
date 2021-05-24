@@ -162,24 +162,83 @@ fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, model: *Model ) callconv(
     return 0;
 }
 
-fn runSimulation( model: *Model ) !void {
-    var g = std.rand.Pcg.init( 12345 ).random;
 
-    var dots = [_]GLfloat { 0.0,0.0, 1.0,1.0, -0.5,0.5, -0.1,0.0, 0.7,-0.1 };
+
+fn runSimulation( model: *Model ) !void {
+    // FIXME: Model isn't thread-safe
+    const allocator = model.allocator;
+
+    var xyA_ = [_]f64 { -1.0,-2.0 };
+    var xyB_ = [_]f64 { 0.0,0.0 };
+    std.debug.assert( xyA_.len == xyB_.len );
+    var coordCount = xyA_.len;
+    var dotCount = @divTrunc( coordCount, 2 );
+    var dotIndices = try allocator.alloc( usize, dotCount );
+    var dotIndicesRange = range( 0, dotCount, 2 );
+    while ( dotIndicesRange.next( ) ) |dotIndex| {
+        dotIndices[ dotIndex ] = dotIndex;
+    }
+
+    // Previous
+    var tA = @as( f64, -1.0 );
+    var xyA = try allocator.alloc( f64, coordCount );
+    std.mem.copy( f64, xyA, &xyA_ );
+
+    // Current
+    var tB = @as( f64, 0.0 );
+    var xyB = try allocator.alloc( f64, coordCount );
+    std.mem.copy( f64, xyB, &xyB_ );
+
+    // Next
+    var xyC = try allocator.alloc( f64, coordCount );
 
     while ( true ) {
-        var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, &dots );
+        std.time.sleep( 250000 );
+
+        var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, xyB );
         gtkzInvokeOnce( &dotsUpdater.runnable );
 
-        const nextUpdate_PMILLIS = std.time.milliTimestamp( ) + 10;
-        while ( std.time.milliTimestamp( ) < nextUpdate_PMILLIS ) {
-            var dotIndices = range( 0, @divTrunc( dots.len, 2 ) );
-            while ( dotIndices.next( ) ) |dotIndex| {
-                // FIXME: Move dots in some interesting way
-                dots[ 2*dotIndex + 0 ] += @floatCast( GLfloat, 1e-4*( -1.0 + 2.0*g.float( f64 ) ) );
-                dots[ 2*dotIndex + 1 ] += @floatCast( GLfloat, 1e-4*( -1.0 + 2.0*g.float( f64 ) ) );
+
+
+        var i = @as( i32, 0 );
+        while ( i < 1000 ) {
+
+
+
+            // FIXME
+            const tC = tB + 1e-7;
+            const dtAB = tB - tA;
+            const dtBC = tC - tB;
+            const dtRatio = dtBC / dtAB;
+            const dtBCSquared = dtBC * dtBC;
+
+            for ( dotIndices ) |dotIndex| {
+                const xA = xyA[ dotIndex + 0 ];
+                const yA = xyA[ dotIndex + 1 ];
+                const xB = xyB[ dotIndex + 0 ];
+                const yB = xyB[ dotIndex + 1 ];
+
+                const ax = 0.0;
+                const ay = -9.80665; // m/s^2
+                const xC = xB + ( xB - xA )*dtRatio + ax*dtBCSquared;
+                const yC = yB + ( yB - yA )*dtRatio + ay*dtBCSquared;
+
+                xyC[ dotIndex + 0 ] = xC;
+                xyC[ dotIndex + 1 ] = yC;
             }
+
+            tA = tB;
+            tB = tC;
+            const ptrTemp = xyA.ptr;
+            xyA.ptr = xyB.ptr;
+            xyB.ptr = xyC.ptr;
+            xyC.ptr = ptrTemp;
+
+
+
+            i += 1;
         }
+
     }
 }
 
@@ -189,9 +248,11 @@ const DotsUpdater = struct {
     dots: []GLfloat,
     runnable: Runnable,
 
-    pub fn createAndInit( allocator: *Allocator, model: *Model, dots: []GLfloat ) !*DotsUpdater {
+    pub fn createAndInit( allocator: *Allocator, model: *Model, dots: []f64 ) !*DotsUpdater {
         var dotsCopy = try allocator.alloc( GLfloat, dots.len );
-        std.mem.copy( GLfloat, dotsCopy, dots );
+        for ( dots ) |coord,i| {
+            dotsCopy[ i ] = @floatCast( GLfloat, coord );
+        }
 
         const self = try allocator.create( DotsUpdater );
         self.* = .{
@@ -266,7 +327,7 @@ pub fn main( ) !void {
 
 
     var axis = Axis2.create( xywh( 0, 0, 500, 500 ) );
-    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 200, 200 ) );
+    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 600, 600 ) );
 
     var bgPaintable = ClearPaintable.create( "bg", GL_COLOR_BUFFER_BIT );
     bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
