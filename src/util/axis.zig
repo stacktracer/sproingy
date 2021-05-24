@@ -7,7 +7,7 @@ pub const Axis1 = struct {
     tieCoord: f64 = 0.0,
     scale: f64 = 1000,
 
-    pub fn create( viewport_PX: Interval1 ) Axis1 {
+    pub fn init( viewport_PX: Interval1 ) Axis1 {
         return Axis1 {
             .viewport_PX = viewport_PX,
         };
@@ -42,10 +42,10 @@ pub const Axis2 = struct {
     grabCoord: Vec2,
     dragger: Dragger,
 
-    pub fn create( viewport_PX: Interval2 ) Axis2 {
+    pub fn init( viewport_PX: Interval2 ) Axis2 {
         return Axis2 {
-            .x = Axis1.create( viewport_PX.x ),
-            .y = Axis1.create( viewport_PX.y ),
+            .x = Axis1.init( viewport_PX.x ),
+            .y = Axis1.init( viewport_PX.y ),
             .grabCoord = undefined,
             .dragger = Dragger {
                 .canHandlePressFn = canHandlePress,

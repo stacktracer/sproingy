@@ -36,7 +36,7 @@ pub const Vec2 = struct {
     x: f64,
     y: f64,
 
-    pub fn create( x: f64, y: f64 ) Vec2 {
+    pub fn init( x: f64, y: f64 ) Vec2 {
         return Vec2 {
             .x = x,
             .y = y,
@@ -50,7 +50,7 @@ pub const Vec2 = struct {
 };
 
 pub fn xy( x: f64, y: f64 ) Vec2 {
-    return Vec2.create( x, y );
+    return Vec2.init( x, y );
 }
 
 pub const Interval1 = struct {
@@ -60,15 +60,15 @@ pub const Interval1 = struct {
     /// Difference between min and exclusive upper bound.
     span: f64,
 
-    pub fn create( min: f64, span: f64 ) Interval1 {
+    pub fn init( min: f64, span: f64 ) Interval1 {
         return Interval1 {
             .min = min,
             .span = span,
         };
     }
 
-    pub fn createWithMinMax( min: f64, max: f64 ) Interval1 {
-        return Interval1.create( min, max - min );
+    pub fn initMinMax( min: f64, max: f64 ) Interval1 {
+        return Interval1.init( min, max - min );
     }
 
     pub fn set( self: *Interval1, min: f64, span: f64 ) void {
@@ -89,10 +89,10 @@ pub const Interval2 = struct {
     x: Interval1,
     y: Interval1,
 
-    pub fn create( x: f64, y: f64, w: f64, h: f64 ) Interval2 {
+    pub fn init( x: f64, y: f64, w: f64, h: f64 ) Interval2 {
         return Interval2 {
-            .x = Interval1.create( x, w ),
-            .y = Interval1.create( y, h ),
+            .x = Interval1.init( x, w ),
+            .y = Interval1.init( y, h ),
         };
     }
 
@@ -112,7 +112,7 @@ pub const Interval2 = struct {
 };
 
 pub fn xywh( x: f64, y: f64, w: f64, h: f64 ) Interval2 {
-    return Interval2.create( x, y, w, h );
+    return Interval2.init( x, y, w, h );
 }
 
 pub const ProcessArgs = struct {
@@ -122,7 +122,7 @@ pub const ProcessArgs = struct {
     argc: c_int,
     argv: [*c][*c]u8,
 
-    pub fn create( allocator: *Allocator ) !ProcessArgs {
+    pub fn init( allocator: *Allocator ) !ProcessArgs {
         var it = std.process.args( );
         defer it.deinit( );
 

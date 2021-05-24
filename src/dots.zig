@@ -20,7 +20,7 @@ pub const DotsPaintable = struct {
     vCount: GLsizei,
     vao: GLuint,
 
-    pub fn create( name: []const u8, axis: *Axis2, allocator: *Allocator ) DotsPaintable {
+    pub fn init( name: []const u8, axis: *Axis2, allocator: *Allocator ) DotsPaintable {
         return DotsPaintable {
             .axis = axis,
 

@@ -22,10 +22,10 @@ const Model = struct {
     axis: *Axis2,
     dotsPaintable: *DotsPaintable,
 
-    pub fn create( allocator: *Allocator, axis: *Axis2, dotsPaintable: *DotsPaintable ) Model {
+    pub fn init( allocator: *Allocator, axis: *Axis2, dotsPaintable: *DotsPaintable ) Model {
         return Model {
             .allocator = allocator,
-            .rootPaintable = MultiPaintable.create( "root", allocator ),
+            .rootPaintable = MultiPaintable.init( "root", allocator ),
             .draggers = ArrayList( *Dragger ).init( allocator ),
             .activeDragger = null,
             .handlersToDisconnect = ArrayList( GtkzHandlerConnection ).init( allocator ),
@@ -370,16 +370,16 @@ pub fn main( ) !void {
     const allocator = &gpa.allocator;
 
 
-    var axis = Axis2.create( xywh( 0, 0, 500, 500 ) );
+    var axis = Axis2.init( xywh( 0, 0, 500, 500 ) );
     axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 60, 60 ) );
 
-    var bgPaintable = ClearPaintable.create( "bg", GL_COLOR_BUFFER_BIT );
+    var bgPaintable = ClearPaintable.init( "bg", GL_COLOR_BUFFER_BIT );
     bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
 
-    var dotsPaintable = DotsPaintable.create( "dots", &axis, allocator );
+    var dotsPaintable = DotsPaintable.init( "dots", &axis, allocator );
     defer dotsPaintable.deinit( );
 
-    var model = Model.create( allocator, &axis, &dotsPaintable );
+    var model = Model.init( allocator, &axis, &dotsPaintable );
     defer model.deinit( );
     try model.rootPaintable.childPainters.append( &bgPaintable.painter );
     try model.rootPaintable.childPainters.append( &dotsPaintable.painter );
@@ -393,7 +393,7 @@ pub fn main( ) !void {
         try gtkzConnectHandler( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
     } );
 
-    var args = try ProcessArgs.create( allocator );
+    var args = try ProcessArgs.init( allocator );
     defer args.deinit( );
     const runResult = g_application_run( @ptrCast( *GApplication, app ), args.argc, args.argv );
     if ( runResult != 0 ) {
