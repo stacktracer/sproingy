@@ -1,9 +1,10 @@
 const std = @import( "std" );
 
 pub fn main( ) void {
-    // Problem only happens with Xoroshira128, not other PRNGs
+    // Problem only happens with Xoroshiro128, not other PRNGs
     // Problem happens regardless of PRNG seed
-    var g = std.rand.Xoroshiro128.init( 0 ).random;
+    var x = std.rand.Xoroshiro128.init( 0 );
+    var g = &x.random;
 
     // Problem happens with some array sizes but not others
     var array = [_]i32 { 0, 0 };
