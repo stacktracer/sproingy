@@ -2,6 +2,7 @@ const std = @import( "std" );
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const pow = std.math.pow;
+const sqrt = std.math.sqrt;
 usingnamespace @import( "util/axis.zig" );
 usingnamespace @import( "util/drag.zig" );
 usingnamespace @import( "util/glz.zig" );
@@ -215,17 +216,17 @@ fn runSimulation( model: *Model ) !void {
 
     // FIXME: Exit condition?
     while ( true ) {
-        std.time.sleep( 10000000 );
+        std.time.sleep( 100000 );
 
         // Send current dot positions to the UI
         var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, xsCurr );
         gtkzInvokeOnce( &dotsUpdater.runnable );
 
         // Compute new dot positions
-        var timeIndicesRange = range( 0, 1000, 1 );
-        while ( timeIndicesRange.next( ) ) |_| {
+        var timeIndices = range( 0, 1000, 1 );
+        while ( timeIndices.next( ) ) |_| {
             // FIXME: Dynamic timestep?
-            const tNext = tCurr + 3e-6;
+            const tNext = tCurr + 3e-7;
             const dt = tNext - tCurr;
             const dtPrev = tCurr - tPrev;
             const dtRatio = dt / dtPrev;
@@ -247,7 +248,7 @@ fn runSimulation( model: *Model ) !void {
                             ds[i] = di;
                             dSquared += di * di;
                         }
-                        const d = std.math.sqrt( dSquared );
+                        const d = sqrt( dSquared );
 
                         // FIXME: Pull out of loop
                         const stiffness = 200.0;
@@ -264,13 +265,29 @@ fn runSimulation( model: *Model ) !void {
                     }
                 }
 
-                // FIXME: Constrain, bounce off walls, etc.
-
                 var xC: [2]f64 = undefined;
                 for ( xB ) |xBi,i| {
                     xC[i] = xBi + ( xBi - xA[i] )*dtRatio + aB[i]*dtSquared;
                 }
                 xsNext[ dotFirstCoordIndex.. ][ 0..2 ].* = xC;
+            }
+
+            // Bounce off walls
+            // NOTE: This may modify xCurr!
+            const xMins = [2]f64 { -20.0, -20.0 };
+            const xMaxs = [2]f64 { 20.0, 20.0 };
+            for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
+                const xC = xsNext[ dotFirstCoordIndex.. ][ 0..2 ].*;
+                for ( xC ) |xCi,i| {
+                    if ( xCi <= xMins[i] ) {
+                        xsCurr[ dotFirstCoordIndex + i ] = 2.0*xMins[i] - xsCurr[ dotFirstCoordIndex + i ];
+                        xsNext[ dotFirstCoordIndex + i ] = 2.0*xMins[i] - xCi;
+                    }
+                    else if ( xCi >= xMaxs[i] ) {
+                        xsCurr[ dotFirstCoordIndex + i ] = 2.0*xMaxs[i] - xsCurr[ dotFirstCoordIndex + i ];
+                        xsNext[ dotFirstCoordIndex + i ] = 2.0*xMaxs[i] - xCi;
+                    }
+                }
             }
 
             // Shift times
