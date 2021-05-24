@@ -173,11 +173,19 @@ fn runSimulation( model: *Model ) !void {
     const xsStart = [_]f64 { 0.0,0.0, -0.5,0.0, -0.1,0.2 };
     const vsStart = [_]f64 { 5.0,8.0,  0.0,9.0,  5.0,0.0 };
 
+    const aConstant = [_]f64 { 0.0, -9.80665 };
+    const xMins = [2]f64 { -20.0, -20.0 };
+    const xMaxs = [2]f64 { 20.0, 20.0 };
+
+    const springStiffness = 200.0;
+    const springRestLength = 0.4;
+    const dotMass = 1.0;
+    const dotMassRecip = 1.0 / dotMass;
+
     std.debug.assert( vsStart.len == xsStart.len );
     var coordCount = xsStart.len;
 
     // Pre-compute dots' start indices, for easy iteration later
-    // FIXME: Is pre-computing dotIndices worth it?
     const dotCount = @divTrunc( coordCount, 2 );
     var dotIndices = range( 0, dotCount, 1 );
     var dotFirstCoordIndices = try allocator.alloc( usize, dotCount );
@@ -186,7 +194,7 @@ fn runSimulation( model: *Model ) !void {
     }
 
     // Previous
-    var tPrev = @as( f64, tStart - 1e-7 );
+    var tPrev = @as( f64, tStart - 3e-7 );
     var xsPrev = try allocator.alloc( f64, coordCount );
     {
         const dt = tStart - tPrev;
@@ -195,7 +203,7 @@ fn runSimulation( model: *Model ) !void {
         for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
             const xB = xsStart[ dotFirstCoordIndex.. ][ 0..2 ].*;
             const vB = vsStart[ dotFirstCoordIndex.. ][ 0..2 ].*;
-            var aB = [2]f64 { 0.0, -9.80665 }; // FIXME: Compute acceleration at xB
+            var aB = aConstant; // FIXME: Compute full acceleration at xB
 
             var xA: [2]f64 = undefined;
             for ( xB ) |xBi,i| {
@@ -216,8 +224,6 @@ fn runSimulation( model: *Model ) !void {
 
     // FIXME: Exit condition?
     while ( true ) {
-        std.time.sleep( 100000 );
-
         // Send current dot positions to the UI
         var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, xsCurr );
         gtkzInvokeOnce( &dotsUpdater.runnable );
@@ -225,7 +231,7 @@ fn runSimulation( model: *Model ) !void {
         // Compute new dot positions
         var timeIndices = range( 0, 1000, 1 );
         while ( timeIndices.next( ) ) |_| {
-            // FIXME: Dynamic timestep?
+            // TODO: Dynamic timestep?
             const tNext = tCurr + 3e-7;
             const dt = tNext - tCurr;
             const dtPrev = tCurr - tPrev;
@@ -236,7 +242,7 @@ fn runSimulation( model: *Model ) !void {
                 const xA = xsPrev[ dotFirstCoordIndex.. ][ 0..2 ].*;
                 const xB = xsCurr[ dotFirstCoordIndex.. ][ 0..2 ].*;
 
-                var aB = [_]f64 { 0.0, -9.80665 };
+                var aB = aConstant;
                 for ( dotFirstCoordIndices ) |dotFirstCoordIndex2| {
                     if ( dotFirstCoordIndex2 != dotFirstCoordIndex ) {
                         const xB2 = xsCurr[ dotFirstCoordIndex2.. ][ 0..2 ].*;
@@ -250,17 +256,11 @@ fn runSimulation( model: *Model ) !void {
                         }
                         const d = sqrt( dSquared );
 
-                        // FIXME: Pull out of loop
-                        const stiffness = 200.0;
-                        const dRest = 0.4;
-                        const mass = 1.0;
-
-                        const offset = d - dRest;
+                        const offset = d - springRestLength;
                         const dRecip = 1.0 / d;
-                        const massRecip = 1.0 / mass;
                         for ( ds ) |di,i| {
-                            const fi = stiffness * offset * di*dRecip;
-                            aB[i] += fi * massRecip;
+                            const fi = springStiffness * offset * di*dRecip;
+                            aB[i] += fi * dotMassRecip;
                         }
                     }
                 }
@@ -274,8 +274,6 @@ fn runSimulation( model: *Model ) !void {
 
             // Bounce off walls
             // NOTE: This may modify xCurr!
-            const xMins = [2]f64 { -20.0, -20.0 };
-            const xMaxs = [2]f64 { 20.0, 20.0 };
             for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
                 const xC = xsNext[ dotFirstCoordIndex.. ][ 0..2 ].*;
                 for ( xC ) |xCi,i| {
@@ -290,11 +288,11 @@ fn runSimulation( model: *Model ) !void {
                 }
             }
 
-            // Shift times
+            // Rotate times
             tPrev = tCurr;
             tCurr = tNext;
 
-            // Shift position slices, recycling the oldest
+            // Rotate position slices, recycling the oldest
             const xsPtrTemp = xsPrev.ptr;
             xsPrev.ptr = xsCurr.ptr;
             xsCurr.ptr = xsNext.ptr;
@@ -387,8 +385,8 @@ pub fn main( ) !void {
     const allocator = &gpa.allocator;
 
 
-    var axis = Axis2.init( xywh( 0, 0, 500, 500 ) );
-    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 60, 60 ) );
+    var axis = Axis2.init( xywh( 0, 0, 800, 600 ) );
+    axis.set( xy( 0.5, 0.85 ), xy( 0, 0 ), xy( 35, 35 ) );
 
     var bgPaintable = ClearPaintable.init( "bg", GL_COLOR_BUFFER_BIT );
     bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
