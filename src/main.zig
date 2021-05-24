@@ -168,75 +168,89 @@ fn runSimulation( model: *Model ) !void {
     // FIXME: Model isn't thread-safe
     const allocator = model.allocator;
 
-    var xyA_ = [_]f64 { -1.0,-2.0 };
-    var xyB_ = [_]f64 { 0.0,0.0 };
-    std.debug.assert( xyA_.len == xyB_.len );
-    var coordCount = xyA_.len;
-    var dotCount = @divTrunc( coordCount, 2 );
+    const tStart = 0.0;
+    const xsStart = [_]f64 { 0.0,0.0, -0.5,0.0 };
+    const vsStart = [_]f64 { 1.0,2.0,  1.5,1.5 };
+
+    std.debug.assert( vsStart.len == xsStart.len );
+    var coordCount = xsStart.len;
+
+    // Pre-compute dots' start indices, for easy iteration later
+    // FIXME: Is pre-computing dotIndices worth it?
+    const dotCount = @divTrunc( coordCount, 2 );
     var dotIndices = try allocator.alloc( usize, dotCount );
-    var dotIndicesRange = range( 0, dotCount, 2 );
-    while ( dotIndicesRange.next( ) ) |dotIndex| {
-        dotIndices[ dotIndex ] = dotIndex;
+    var dotNumbers = range( 0, dotCount, 1 );
+    while ( dotNumbers.next( ) ) |dotNumber| {
+        dotIndices[ dotNumber ] = 2 * dotNumber;
     }
 
     // Previous
-    var tA = @as( f64, -1.0 );
-    var xyA = try allocator.alloc( f64, coordCount );
-    std.mem.copy( f64, xyA, &xyA_ );
+    var tPrev = @as( f64, tStart - 1e-7 );
+    var xsPrev = try allocator.alloc( f64, coordCount );
+    {
+        const dt = tStart - tPrev;
+        const dtSquared = dt*dt;
+
+        for ( dotIndices ) |dotIndex| {
+            const xB = xsStart[ dotIndex.. ][ 0..2 ].*;
+            const vB = vsStart[ dotIndex.. ][ 0..2 ].*;
+            var aB = [2]f64 { 0.0, -9.80665 }; // FIXME: Compute acceleration at xB
+
+            var xA: [2]f64 = undefined;
+            for ( xB ) |xBi,i| {
+                // Don't know vA/aA, but vB/aB are good enough for init
+                xA[i] = xBi - vB[i]*dt - aB[i]*dtSquared;
+            }
+            std.mem.copy( f64, xsPrev[ dotIndex..dotIndex+2 ], xA[ 0..2 ] );
+        }
+    }
 
     // Current
-    var tB = @as( f64, 0.0 );
-    var xyB = try allocator.alloc( f64, coordCount );
-    std.mem.copy( f64, xyB, &xyB_ );
+    var tCurr = @as( f64, tStart );
+    var xsCurr = try allocator.alloc( f64, coordCount );
+    std.mem.copy( f64, xsCurr, &xsStart );
 
     // Next
-    var xyC = try allocator.alloc( f64, coordCount );
+    var xsNext = try allocator.alloc( f64, coordCount );
 
     while ( true ) {
         std.time.sleep( 250000 );
 
-        var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, xyB );
+        // Send current dot positions to the UI
+        var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, xsCurr );
         gtkzInvokeOnce( &dotsUpdater.runnable );
 
-
-
-        var i = @as( i32, 0 );
-        while ( i < 1000 ) {
-
-
-
-            // FIXME
-            const tC = tB + 1e-7;
-            const dtAB = tB - tA;
-            const dtBC = tC - tB;
-            const dtRatio = dtBC / dtAB;
-            const dtBCSquared = dtBC * dtBC;
+        // Compute new dot positions
+        var timeIndicesRange = range( 0, 1000, 1 );
+        while ( timeIndicesRange.next( ) ) |_| {
+            // FIXME: Dynamic timestep?
+            const tNext = tCurr + 1e-7;
+            const dt = tNext - tCurr;
+            const dtPrev = tCurr - tPrev;
+            const dtRatio = dt / dtPrev;
+            const dtSquared = dt * dt;
 
             for ( dotIndices ) |dotIndex| {
-                const xA = xyA[ dotIndex + 0 ];
-                const yA = xyA[ dotIndex + 1 ];
-                const xB = xyB[ dotIndex + 0 ];
-                const yB = xyB[ dotIndex + 1 ];
+                const xA = xsPrev[ dotIndex.. ][ 0..2 ].*;
+                const xB = xsCurr[ dotIndex.. ][ 0..2 ].*;
+                var aB = [2]f64 { 0.0, -9.80665 }; // FIXME: Compute acceleration at xB
 
-                const ax = 0.0;
-                const ay = -9.80665; // m/s^2
-                const xC = xB + ( xB - xA )*dtRatio + ax*dtBCSquared;
-                const yC = yB + ( yB - yA )*dtRatio + ay*dtBCSquared;
-
-                xyC[ dotIndex + 0 ] = xC;
-                xyC[ dotIndex + 1 ] = yC;
+                var xC: [2]f64 = undefined;
+                for ( xB ) |xBi,i| {
+                    xC[i] = xBi + ( xBi - xA[i] )*dtRatio + aB[i]*dtSquared;
+                }
+                std.mem.copy( f64, xsNext[ dotIndex..dotIndex+2 ], xC[ 0..2 ] );
             }
 
-            tA = tB;
-            tB = tC;
-            const ptrTemp = xyA.ptr;
-            xyA.ptr = xyB.ptr;
-            xyB.ptr = xyC.ptr;
-            xyC.ptr = ptrTemp;
+            // Shift times
+            tPrev = tCurr;
+            tCurr = tNext;
 
-
-
-            i += 1;
+            // Shift position slices, recycling the oldest
+            const xsPtrTemp = xsPrev.ptr;
+            xsPrev.ptr = xsCurr.ptr;
+            xsCurr.ptr = xsNext.ptr;
+            xsNext.ptr = xsPtrTemp;
         }
 
     }
