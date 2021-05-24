@@ -169,8 +169,8 @@ fn runSimulation( model: *Model ) !void {
     const allocator = model.allocator;
 
     const tStart = 0.0;
-    const xsStart = [_]f64 { 0.0,0.0, -0.5,0.0 };
-    const vsStart = [_]f64 { 1.0,2.0,  1.5,1.5 };
+    const xsStart = [_]f64 { 0.0,0.0, -0.5,0.0, -0.1,0.2 };
+    const vsStart = [_]f64 { 5.0,8.0,  0.0,9.0,  5.0,0.0 };
 
     std.debug.assert( vsStart.len == xsStart.len );
     var coordCount = xsStart.len;
@@ -178,10 +178,10 @@ fn runSimulation( model: *Model ) !void {
     // Pre-compute dots' start indices, for easy iteration later
     // FIXME: Is pre-computing dotIndices worth it?
     const dotCount = @divTrunc( coordCount, 2 );
-    var dotIndices = try allocator.alloc( usize, dotCount );
-    var dotNumbers = range( 0, dotCount, 1 );
-    while ( dotNumbers.next( ) ) |dotNumber| {
-        dotIndices[ dotNumber ] = 2 * dotNumber;
+    var dotIndices = range( 0, dotCount, 1 );
+    var dotFirstCoordIndices = try allocator.alloc( usize, dotCount );
+    while ( dotIndices.next( ) ) |dotIndex| {
+        dotFirstCoordIndices[ dotIndex ] = 2 * dotIndex;
     }
 
     // Previous
@@ -191,9 +191,9 @@ fn runSimulation( model: *Model ) !void {
         const dt = tStart - tPrev;
         const dtSquared = dt*dt;
 
-        for ( dotIndices ) |dotIndex| {
-            const xB = xsStart[ dotIndex.. ][ 0..2 ].*;
-            const vB = vsStart[ dotIndex.. ][ 0..2 ].*;
+        for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
+            const xB = xsStart[ dotFirstCoordIndex.. ][ 0..2 ].*;
+            const vB = vsStart[ dotFirstCoordIndex.. ][ 0..2 ].*;
             var aB = [2]f64 { 0.0, -9.80665 }; // FIXME: Compute acceleration at xB
 
             var xA: [2]f64 = undefined;
@@ -201,7 +201,7 @@ fn runSimulation( model: *Model ) !void {
                 // Don't know vA/aA, but vB/aB are good enough for init
                 xA[i] = xBi - vB[i]*dt - aB[i]*dtSquared;
             }
-            std.mem.copy( f64, xsPrev[ dotIndex..dotIndex+2 ], xA[ 0..2 ] );
+            xsPrev[ dotFirstCoordIndex.. ][ 0..2 ].* = xA;
         }
     }
 
@@ -213,8 +213,9 @@ fn runSimulation( model: *Model ) !void {
     // Next
     var xsNext = try allocator.alloc( f64, coordCount );
 
+    // FIXME: Exit condition?
     while ( true ) {
-        std.time.sleep( 250000 );
+        std.time.sleep( 10000000 );
 
         // Send current dot positions to the UI
         var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, xsCurr );
@@ -224,22 +225,52 @@ fn runSimulation( model: *Model ) !void {
         var timeIndicesRange = range( 0, 1000, 1 );
         while ( timeIndicesRange.next( ) ) |_| {
             // FIXME: Dynamic timestep?
-            const tNext = tCurr + 1e-7;
+            const tNext = tCurr + 3e-6;
             const dt = tNext - tCurr;
             const dtPrev = tCurr - tPrev;
             const dtRatio = dt / dtPrev;
             const dtSquared = dt * dt;
 
-            for ( dotIndices ) |dotIndex| {
-                const xA = xsPrev[ dotIndex.. ][ 0..2 ].*;
-                const xB = xsCurr[ dotIndex.. ][ 0..2 ].*;
-                var aB = [2]f64 { 0.0, -9.80665 }; // FIXME: Compute acceleration at xB
+            for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
+                const xA = xsPrev[ dotFirstCoordIndex.. ][ 0..2 ].*;
+                const xB = xsCurr[ dotFirstCoordIndex.. ][ 0..2 ].*;
+
+                var aB = [_]f64 { 0.0, -9.80665 };
+                for ( dotFirstCoordIndices ) |dotFirstCoordIndex2| {
+                    if ( dotFirstCoordIndex2 != dotFirstCoordIndex ) {
+                        const xB2 = xsCurr[ dotFirstCoordIndex2.. ][ 0..2 ].*;
+
+                        var ds: [2]f64 = undefined;
+                        var dSquared = @as( f64, 0.0 );
+                        for ( xB2 ) |xB2i,i| {
+                            const di = xB2i - xB[i];
+                            ds[i] = di;
+                            dSquared += di * di;
+                        }
+                        const d = std.math.sqrt( dSquared );
+
+                        // FIXME: Pull out of loop
+                        const stiffness = 200.0;
+                        const dRest = 0.4;
+                        const mass = 1.0;
+
+                        const offset = d - dRest;
+                        const dRecip = 1.0 / d;
+                        const massRecip = 1.0 / mass;
+                        for ( ds ) |di,i| {
+                            const fi = stiffness * offset * di*dRecip;
+                            aB[i] += fi * massRecip;
+                        }
+                    }
+                }
+
+                // FIXME: Constrain, bounce off walls, etc.
 
                 var xC: [2]f64 = undefined;
                 for ( xB ) |xBi,i| {
                     xC[i] = xBi + ( xBi - xA[i] )*dtRatio + aB[i]*dtSquared;
                 }
-                std.mem.copy( f64, xsNext[ dotIndex..dotIndex+2 ], xC[ 0..2 ] );
+                xsNext[ dotFirstCoordIndex.. ][ 0..2 ].* = xC;
             }
 
             // Shift times
@@ -252,7 +283,6 @@ fn runSimulation( model: *Model ) !void {
             xsCurr.ptr = xsNext.ptr;
             xsNext.ptr = xsPtrTemp;
         }
-
     }
 }
 
@@ -341,7 +371,7 @@ pub fn main( ) !void {
 
 
     var axis = Axis2.create( xywh( 0, 0, 500, 500 ) );
-    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 600, 600 ) );
+    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 60, 60 ) );
 
     var bgPaintable = ClearPaintable.create( "bg", GL_COLOR_BUFFER_BIT );
     bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
