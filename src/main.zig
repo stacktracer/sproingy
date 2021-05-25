@@ -177,8 +177,8 @@ fn runSimulation( model: *Model ) !void {
     const xMins = [2]f64 { -20.0, -20.0 };
     const xMaxs = [2]f64 { 20.0, 20.0 };
 
-    const springStiffness = 200.0;
-    const springRestLength = 0.4;
+    const springStiffness = 800.0;
+    const springRestLength = 1.2;
     const dotMass = 1.0;
     const dotMassRecip = 1.0 / dotMass;
 
@@ -225,7 +225,7 @@ fn runSimulation( model: *Model ) !void {
     // FIXME: Exit condition?
     while ( true ) {
         // Send current dot positions to the UI
-        var dotsUpdater = try DotsUpdater.createAndInit( model.allocator, model, xsCurr );
+        var dotsUpdater = try DotsUpdater.createAndInit( allocator, model, xsCurr );
         gtkzInvokeOnce( &dotsUpdater.runnable );
 
         // Compute new dot positions
