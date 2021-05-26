@@ -171,9 +171,10 @@ fn runSimulation( model: *Model ) !void {
 
     const tStart = 0.0;
     const xsStart = [_]f64 { 0.0,0.0, -0.5,0.0, -0.1,0.2 };
-    const vsStart = [_]f64 { 5.0,8.0,  0.0,9.0,  5.0,0.0 };
+    const coordCount = xsStart.len;
+    const vsStart = [ coordCount ]f64 { 5.0,8.0,  0.0,9.0,  5.0,0.0 };
 
-    const aConstant = [_]f64 { 0.0, -9.80665 };
+    const aConstant = [2]f64 { 0.0, -9.80665 };
     const xMins = [2]f64 { -20.0, -20.0 };
     const xMaxs = [2]f64 { 20.0, 20.0 };
 
@@ -181,9 +182,6 @@ fn runSimulation( model: *Model ) !void {
     const springRestLength = 1.2;
     const dotMass = 1.0;
     const dotMassRecip = 1.0 / dotMass;
-
-    std.debug.assert( vsStart.len == xsStart.len );
-    var coordCount = xsStart.len;
 
     // Pre-compute dots' start indices, for easy iteration later
     const dotCount = @divTrunc( coordCount, 2 );
@@ -217,7 +215,7 @@ fn runSimulation( model: *Model ) !void {
     // Current
     var tCurr = @as( f64, tStart );
     var xsCurr = try allocator.alloc( f64, coordCount );
-    std.mem.copy( f64, xsCurr, &xsStart );
+    xsCurr[ 0..coordCount ].* = xsStart;
 
     // Next
     var xsNext = try allocator.alloc( f64, coordCount );
@@ -238,6 +236,7 @@ fn runSimulation( model: *Model ) !void {
             const dtRatio = dt / dtPrev;
             const dtSquared = dt * dt;
 
+            // TODO: Multi-thread; avoid false sharing of xsNext
             for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
                 const xA = xsPrev[ dotFirstCoordIndex.. ][ 0..2 ].*;
                 const xB = xsCurr[ dotFirstCoordIndex.. ][ 0..2 ].*;
