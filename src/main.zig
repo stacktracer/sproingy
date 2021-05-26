@@ -268,6 +268,27 @@ fn runSimulation( model: *Model ) !void {
                 for ( xB ) |xBi,i| {
                     xC[i] = xBi + ( xBi - xA[i] )*dtRatio + aB[i]*dtSquared;
                 }
+
+                // FIXME: Bounce here, accelerating properly on each segment
+                //
+                // Assume we start the timestep NOT in a wall. Check whether
+                // we're in a wall at the end of the timestep. Also, find the
+                // time at which the derivative of the parabola is zero, and
+                // if that time is before the end of the timestep, also check
+                // whether we're in a wall at that time. Both of these checks
+                // should both be computationally cheap -- the expensive part
+                // will be handling dots that have hit a wall, but we will
+                // assume there won't be many of those on a given timestep.
+                //
+                // Quadratic formula should be enough to find the intersection
+                // of the path with the wall.
+                //
+                // This will require keep an unmodified copy of xsCurr, for
+                // computing the forces that apply on the current timestep,
+                // and also a munged copy of xsCurr, to be used as xsPrev on
+                // the next timestep. Maybe it's time to read about "velocity
+                // verlet" again.
+
                 xsNext[ dotFirstCoordIndex.. ][ 0..2 ].* = xC;
             }
 
