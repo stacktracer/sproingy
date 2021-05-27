@@ -9,6 +9,7 @@ usingnamespace @import( "util/glz.zig" );
 usingnamespace @import( "util/gtkz.zig" );
 usingnamespace @import( "util/misc.zig" );
 usingnamespace @import( "util/paint.zig" );
+usingnamespace @import( "drawarrays.zig" );
 usingnamespace @import( "dots.zig" );
 
 const Model = struct {
@@ -170,17 +171,17 @@ fn runSimulation( model: *Model ) !void {
     const allocator = model.allocator;
 
     const tStart = 0.0;
-    const xsStart = [_]f64 { 0.0,0.0, -0.5,0.0, -0.1,0.2 };
+    const xsStart = [_]f64 { -6.0,-3.0, -6.5,-3.0, -6.1,-3.2 };
     const coordCount = xsStart.len;
-    const vsStart = [ coordCount ]f64 { 5.0,8.0,  0.0,9.0,  5.0,0.0 };
+    const vsStart = [ coordCount ]f64 { 7.0,13.0,  2.0,14.0,  5.0,6.0 };
 
     const aConstant = [2]f64 { 0.0, -9.80665 };
-    const xMins = [2]f64 { -20.0, -20.0 };
-    const xMaxs = [2]f64 { 20.0, 20.0 };
+    const xMins = [2]f64 { -8.0, -6.0 };
+    const xMaxs = [2]f64 {  8.0,  6.0 };
 
-    const springStiffness = 800.0;
-    const springRestLength = 1.2;
-    const dotMass = 1.0;
+    const springStiffness = 300.0;
+    const springRestLength = 0.6;
+    const dotMass = 10.0;
     const dotMassRecip = 1.0 / dotMass;
 
     // Pre-compute dots' start indices, for easy iteration later
@@ -192,7 +193,7 @@ fn runSimulation( model: *Model ) !void {
     }
 
     // Previous
-    var tPrev = @as( f64, tStart - 3e-7 );
+    var tPrev = @as( f64, tStart - 2e-7 );
     var xsPrev = try allocator.alloc( f64, coordCount );
     {
         const dt = tStart - tPrev;
@@ -230,7 +231,7 @@ fn runSimulation( model: *Model ) !void {
         var timeIndices = range( 0, 1000, 1 );
         while ( timeIndices.next( ) ) |_| {
             // TODO: Dynamic timestep?
-            const tNext = tCurr + 3e-7;
+            const tNext = tCurr + 2e-7;
             const dt = tNext - tCurr;
             const dtPrev = tCurr - tPrev;
             const dtRatio = dt / dtPrev;
@@ -349,9 +350,9 @@ const DotsUpdater = struct {
         const self = @fieldParentPtr( DotsUpdater, "runnable", runnable );
 
         // FIXME: Don't do any of this if the model has been deinited
-        try self.model.dotsPaintable.dotCoords.resize( self.dots.len );
-        try self.model.dotsPaintable.dotCoords.replaceRange( 0, self.dots.len, self.dots );
-        self.model.dotsPaintable.dotCoordsModified = true;
+        try self.model.dotsPaintable.coords.resize( self.dots.len );
+        try self.model.dotsPaintable.coords.replaceRange( 0, self.dots.len, self.dots );
+        self.model.dotsPaintable.coordsModified = true;
         gtkzDrawWidgets( self.model.widgetsToRepaint.items );
 
         self.allocator.destroy( self );
@@ -406,17 +407,26 @@ pub fn main( ) !void {
 
 
     var axis = Axis2.init( xywh( 0, 0, 800, 600 ) );
-    axis.set( xy( 0.5, 0.85 ), xy( 0, 0 ), xy( 35, 35 ) );
+    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 47, 47 ) );
 
     var bgPaintable = ClearPaintable.init( "bg", GL_COLOR_BUFFER_BIT );
-    bgPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
+    bgPaintable.rgba = [_]GLfloat { 0.4, 0.4, 0.4, 1.0 };
+
+    var boxPaintable = DrawArraysPaintable.init( "box", &axis, GL_TRIANGLE_STRIP, allocator );
+    defer boxPaintable.deinit( );
+    boxPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
+    var boxCoords = [_]GLfloat { -8.0,6.0, -8.0,-6.0, 8.0,6.0, 8.0,-6.0 }; // FIXME: Put box coords in model
+    try boxPaintable.coords.resize( boxCoords.len );
+    try boxPaintable.coords.replaceRange( 0, boxCoords.len, &boxCoords );
 
     var dotsPaintable = DotsPaintable.init( "dots", &axis, allocator );
     defer dotsPaintable.deinit( );
+    dotsPaintable.rgba = [_]GLfloat { 1.0, 0.0, 0.0, 1.0 };
 
     var model = Model.init( allocator, &axis, &dotsPaintable );
     defer model.deinit( );
     try model.rootPaintable.childPainters.append( &bgPaintable.painter );
+    try model.rootPaintable.childPainters.append( &boxPaintable.painter );
     try model.rootPaintable.childPainters.append( &dotsPaintable.painter );
     try model.draggers.append( &axis.dragger );
 

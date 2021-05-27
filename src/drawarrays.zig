@@ -6,27 +6,27 @@ usingnamespace @import( "util/glz.zig" );
 usingnamespace @import( "util/misc.zig" );
 usingnamespace @import( "util/paint.zig" );
 
-pub const DotsPaintable = struct {
+pub const DrawArraysPaintable = struct {
     painter: Painter,
 
     axis: *Axis2,
 
-    size_LPX: f64,
+    mode: GLenum,
     rgba: [4]GLfloat,
     coords: ArrayList( GLfloat ),
     coordsModified: bool,
 
-    prog: DotsProgram,
+    prog: DrawArraysProgram,
     vbo: GLuint,
     vCount: GLsizei,
     vao: GLuint,
 
-    pub fn init( name: []const u8, axis: *Axis2, allocator: *Allocator ) DotsPaintable {
-        return DotsPaintable {
+    pub fn init( name: []const u8, axis: *Axis2, mode: GLenum, allocator: *Allocator ) DrawArraysPaintable {
+        return DrawArraysPaintable {
             .axis = axis,
 
-            .size_LPX = 15,
-            .rgba = [4]GLfloat { 1.0, 0.0, 0.0, 1.0 },
+            .mode = mode,
+            .rgba = [4]GLfloat { 0.0, 0.0, 0.0, 1.0 },
             .coords = ArrayList( GLfloat ).init( allocator ),
             .coordsModified = true,
 
@@ -45,9 +45,9 @@ pub const DotsPaintable = struct {
     }
 
     fn glInit( painter: *Painter, pc: *const PainterContext ) !void {
-        const self = @fieldParentPtr( DotsPaintable, "painter", painter );
+        const self = @fieldParentPtr( DrawArraysPaintable, "painter", painter );
 
-        self.prog = try DotsProgram.glCreate( );
+        self.prog = try DrawArraysProgram.glCreate( );
 
         glGenBuffers( 1, &self.vbo );
         glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
@@ -59,7 +59,7 @@ pub const DotsPaintable = struct {
     }
 
     fn glPaint( painter: *Painter, pc: *const PainterContext ) !void {
-        const self = @fieldParentPtr( DotsPaintable, "painter", painter );
+        const self = @fieldParentPtr( DrawArraysPaintable, "painter", painter );
 
         if ( self.coordsModified ) {
             self.vCount = @intCast( GLsizei, @divTrunc( self.coords.items.len, 2 ) );
@@ -71,44 +71,40 @@ pub const DotsPaintable = struct {
 
         if ( self.vCount > 0 ) {
             const bounds = self.axis.getBounds( );
-            const size_PX = @floatCast( f32, self.size_LPX * pc.lpxToPx );
 
             glzEnablePremultipliedAlphaBlending( );
 
-            glEnable( GL_VERTEX_PROGRAM_POINT_SIZE );
             glUseProgram( self.prog.program );
             glzUniformInterval2( self.prog.XY_BOUNDS, bounds );
-            glUniform1f( self.prog.SIZE_PX, size_PX );
             glUniform4fv( self.prog.RGBA, 1, &self.rgba );
 
             glBindVertexArray( self.vao );
-            glDrawArrays( GL_POINTS, 0, self.vCount );
+            glDrawArrays( self.mode, 0, self.vCount );
         }
     }
 
     fn glDeinit( painter: *Painter ) void {
-        const self = @fieldParentPtr( DotsPaintable, "painter", painter );
+        const self = @fieldParentPtr( DrawArraysPaintable, "painter", painter );
         glDeleteProgram( self.prog.program );
         glDeleteVertexArrays( 1, &self.vao );
         glDeleteBuffers( 1, &self.vbo );
     }
 
-    pub fn deinit( self: *DotsPaintable ) void {
+    pub fn deinit( self: *DrawArraysPaintable ) void {
         self.coords.deinit( );
     }
 };
 
-const DotsProgram = struct {
+const DrawArraysProgram = struct {
     program: GLuint,
 
     XY_BOUNDS: GLint,
-    SIZE_PX: GLint,
     RGBA: GLint,
 
     /// x_XAXIS, y_YAXIS
     inCoords: GLuint,
 
-    pub fn glCreate( ) !DotsProgram {
+    pub fn glCreate( ) !DrawArraysProgram {
         const vertSource =
             \\#version 150 core
             \\
@@ -129,7 +125,6 @@ const DotsProgram = struct {
             \\}
             \\
             \\uniform vec4 XY_BOUNDS;
-            \\uniform float SIZE_PX;
             \\
             \\// x_XAXIS, y_YAXIS
             \\in vec2 inCoords;
@@ -137,7 +132,6 @@ const DotsProgram = struct {
             \\void main( void ) {
             \\    vec2 xy_XYAXIS = inCoords.xy;
             \\    gl_Position = vec4( coordsToNdc2D( xy_XYAXIS, XY_BOUNDS ), 0.0, 1.0 );
-            \\    gl_PointSize = SIZE_PX;
             \\}
         ;
 
@@ -145,32 +139,20 @@ const DotsProgram = struct {
             \\#version 150 core
             \\precision lowp float;
             \\
-            \\const float FEATHER_PX = 0.9;
-            \\
-            \\uniform float SIZE_PX;
             \\uniform vec4 RGBA;
             \\
             \\out vec4 outRgba;
             \\
             \\void main( void ) {
-            \\    vec2 xy_NPC = -1.0 + 2.0*gl_PointCoord;
-            \\    float r_NPC = sqrt( dot( xy_NPC, xy_NPC ) );
-            \\
-            \\    float pxToNpc = 2.0 / SIZE_PX;
-            \\    float rOuter_NPC = 1.0 - 0.5*pxToNpc;
-            \\    float rInner_NPC = rOuter_NPC - FEATHER_PX*pxToNpc;
-            \\    float mask = smoothstep( rOuter_NPC, rInner_NPC, r_NPC );
-            \\
-            \\    float alpha = mask * RGBA.a;
+            \\    float alpha = RGBA.a;
             \\    outRgba = vec4( alpha*RGBA.rgb, alpha );
             \\}
         ;
 
         const program = try glzCreateProgram( vertSource, fragSource );
-        return DotsProgram {
+        return DrawArraysProgram {
             .program = program,
             .XY_BOUNDS = glGetUniformLocation( program, "XY_BOUNDS" ),
-            .SIZE_PX = glGetUniformLocation( program, "SIZE_PX" ),
             .RGBA = glGetUniformLocation( program, "RGBA" ),
             .inCoords = @intCast( GLuint, glGetAttribLocation( program, "inCoords" ) ),
         };
