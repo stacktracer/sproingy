@@ -275,25 +275,25 @@ fn runSimulation( model: *Model ) !void {
                 // Assume we start the timestep NOT in a wall. Check whether
                 // we're in a wall at the end of the timestep. Also, find the
                 // time at which the derivative of the parabola is zero, and
-                // if that time is before the end of the timestep, also check
-                // whether we're in a wall at that time. Both of these checks
-                // should both be computationally cheap -- the expensive part
-                // will be handling dots that have hit a wall, but we will
-                // assume there won't be many of those on a given timestep.
+                // if that time is before the end of the timestep, then check
+                // whether we're in a wall at that time. These checks should
+                // both be computationally cheap -- the expensive part will
+                // be handling dots that have hit a wall, but we'll assume
+                // there won't be many of those on a given timestep.
                 //
                 // Quadratic formula should be enough to find the intersection
                 // of the path with the wall.
                 //
-                // This will require keep an unmodified copy of xsCurr, for
+                // This will require keeping an unmodified copy of xsCurr, for
                 // computing the forces that apply on the current timestep,
                 // and also a munged copy of xsCurr, to be used as xsPrev on
-                // the next timestep. Maybe it's time to read about "velocity
-                // verlet" again.
+                // the next timestep. Maybe it's time to read up on "velocity
+                // verlet."
 
                 xsNext[ dotFirstCoordIndex.. ][ 0..2 ].* = xC;
             }
 
-            // Bounce off walls
+            // FIXME: Reflect off walls -- assumes acceleration is symmetric about the wall, which generally isn't true
             // NOTE: This may modify xCurr!
             for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
                 const xC = xsNext[ dotFirstCoordIndex.. ][ 0..2 ].*;
