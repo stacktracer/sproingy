@@ -4,7 +4,7 @@ const Builder = std.build.Builder;
 pub fn build( b: *Builder ) void {
     const mode = b.standardReleaseOptions( );
 
-    const exe = b.addExecutable( "dummy", "src/main.zig" );
+    const exe = b.addExecutable( "sproingy", "src/main.zig" );
     exe.setBuildMode( mode );
     exe.addIncludeDir( "include" );
     exe.addIncludeDir( "/usr/include" );

@@ -369,7 +369,7 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
 
             const window = gtk_application_window_new( app );
             gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
-            gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Dots" );
+            gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
             gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 800, 600 );
             gtk_widget_show_all( window );
             try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
@@ -421,7 +421,7 @@ pub fn main( ) !void {
     try model.draggers.append( &axis.dragger );
 
 
-    var app = gtk_application_new( "net.hogye.dots", .G_APPLICATION_FLAGS_NONE );
+    var app = gtk_application_new( "net.hogye.sproingy", .G_APPLICATION_FLAGS_NONE );
     defer g_object_unref( app );
 
     try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {

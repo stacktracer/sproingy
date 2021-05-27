@@ -8,9 +8,10 @@ A toy project for learning about some things:
 
 ## Build & Run
 
-Development is all on Linux x86-64 so far. In theory, should work on any platform where Zig, GTK3, and OpenGL are supported.
+Development is all on Linux x86-64 so far, but in theory everything should work on any platform where Zig, GTK3, and OpenGL are supported.
 
-To build and run:
-
-1. Run the `header-tweaks.sh` script, which makes local copies of GTK headers, and patches them so Zig can digest them easily
-1. `zig build run`
+To build and run the first time:
+```
+header-tweaks.sh && zig build run
+```
+The header-tweaks script only needs to be run the first time you build. It makes local copies of some GTK headers, and patches them so that Zig can digest them easily.
