@@ -1,9 +1,9 @@
 # Sproingy
 
-A toy project for learning about some things:
+A toy project for learning some things:
  * [Zig](https://ziglang.org/)
  * GUI toolkits with OpenGL support ([GLFW](https://www.glfw.org/), [SDL2](http://wiki.libsdl.org/), [GTK3](https://developer.gnome.org/gtk3/stable/))
- * [Verlet integration](https://en.wikipedia.org/wiki/Verlet_integration) for simple physics modeling
+ * Simple physics modeling with [Verlet integration](https://en.wikipedia.org/wiki/Verlet_integration)
 
     <img src="./misc/20210526_sproingy.gif" width="480" height="360">
 
