@@ -52,50 +52,57 @@ const Model = struct {
     }
 };
 
-fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
-    if ( model.activeDragger == null and ev.button == 1 ) {
-        const mouse_PX = gtkzMousePos_PX( widget, ev );
-        model.activeDragger = findDragger( model.draggers.items, mouse_PX );
+fn onButtonPress( widget: *GtkWidget, ev: *GdkEventButton, modelPtr: *?*Model ) callconv(.C) gboolean {
+    if ( modelPtr.* ) |model| {
+        if ( model.activeDragger == null and ev.button == 1 ) {
+            const mouse_PX = gtkzMousePos_PX( widget, ev );
+            model.activeDragger = findDragger( model.draggers.items, mouse_PX );
+            if ( model.activeDragger != null ) {
+                model.activeDragger.?.handlePress( mouse_PX );
+                gtkzDrawWidgets( model.widgetsToRepaint.items );
+            }
+        }
+    }
+    return 1;
+}
+
+fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, modelPtr: *?*Model ) callconv(.C) gboolean {
+    if ( modelPtr.* ) |model| {
         if ( model.activeDragger != null ) {
-            model.activeDragger.?.handlePress( mouse_PX );
+            const mouse_PX = gtkzMousePos_PX( widget, ev );
+            model.activeDragger.?.handleDrag( mouse_PX );
             gtkzDrawWidgets( model.widgetsToRepaint.items );
         }
     }
     return 1;
 }
 
-fn onMotion( widget: *GtkWidget, ev: *GdkEventMotion, model: *Model ) callconv(.C) gboolean {
-    if ( model.activeDragger != null ) {
-        const mouse_PX = gtkzMousePos_PX( widget, ev );
-        model.activeDragger.?.handleDrag( mouse_PX );
-        gtkzDrawWidgets( model.widgetsToRepaint.items );
+fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, modelPtr: *?*Model ) callconv(.C) gboolean {
+    if ( modelPtr.* ) |model| {
+        if ( model.activeDragger != null and ev.button == 1 ) {
+            const mouse_PX = gtkzMousePos_PX( widget, ev );
+            model.activeDragger.?.handleRelease( mouse_PX );
+            model.activeDragger = null;
+            gtkzDrawWidgets( model.widgetsToRepaint.items );
+        }
     }
     return 1;
 }
 
-fn onButtonRelease( widget: *GtkWidget, ev: *GdkEventButton, model: *Model ) callconv(.C) gboolean {
-    if ( model.activeDragger != null and ev.button == 1 ) {
+fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll, modelPtr: *?*Model ) callconv(.C) gboolean {
+    if ( modelPtr.* ) |model| {
         const mouse_PX = gtkzMousePos_PX( widget, ev );
-        model.activeDragger.?.handleRelease( mouse_PX );
-        model.activeDragger = null;
+        const mouse_FRAC = pxToAxisFrac( model.axis, mouse_PX );
+        const mouse_XY = model.axis.getBounds( ).fracToValue( mouse_FRAC );
+
+        const zoomStepFactor = 1.12;
+        const zoomSteps = getZoomSteps( ev );
+        const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
+        const scale = xy( zoomFactor*model.axis.x.scale, zoomFactor*model.axis.y.scale );
+
+        model.axis.set( mouse_FRAC, mouse_XY, scale );
         gtkzDrawWidgets( model.widgetsToRepaint.items );
     }
-    return 1;
-}
-
-fn onWheel( widget: *GtkWidget, ev: *GdkEventScroll, model: *Model ) callconv(.C) gboolean {
-    const mouse_PX = gtkzMousePos_PX( widget, ev );
-    const mouse_FRAC = pxToAxisFrac( model.axis, mouse_PX );
-    const mouse_XY = model.axis.getBounds( ).fracToValue( mouse_FRAC );
-
-    const zoomStepFactor = 1.12;
-    const zoomSteps = getZoomSteps( ev );
-    const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
-    const scale = xy( zoomFactor*model.axis.x.scale, zoomFactor*model.axis.y.scale );
-
-    model.axis.set( mouse_FRAC, mouse_XY, scale );
-    gtkzDrawWidgets( model.widgetsToRepaint.items );
-
     return 1;
 }
 
@@ -118,57 +125,64 @@ fn getZoomSteps( ev: *GdkEventScroll ) f64 {
     return 0.0;
 }
 
-fn onKeyPress( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(.C) gboolean {
-    switch ( ev.keyval ) {
-        GDK_KEY_Escape => gtkzCloseWindows( model.windowsToClose.items ),
-        else => {
-            // std.debug.print( "  KEY_PRESS: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
-        },
+fn onKeyPress( widget: *GtkWidget, ev: *GdkEventKey, modelPtr: *?*Model ) callconv(.C) gboolean {
+    if ( modelPtr.* ) |model| {
+        switch ( ev.keyval ) {
+            GDK_KEY_Escape => gtkzCloseWindows( model.windowsToClose.items ),
+            else => {
+                // std.debug.print( "  KEY_PRESS: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
+            },
+        }
     }
     return 1;
 }
 
-fn onKeyRelease( widget: *GtkWidget, ev: *GdkEventKey, model: *Model ) callconv(.C) gboolean {
-    switch ( ev.keyval ) {
-        else => {
-            // std.debug.print( "KEY_RELEASE: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
-        },
+fn onKeyRelease( widget: *GtkWidget, ev: *GdkEventKey, modelPtr: *?*Model ) callconv(.C) gboolean {
+    if ( modelPtr.* ) |model| {
+        switch ( ev.keyval ) {
+            else => {
+                // std.debug.print( "KEY_RELEASE: keyval = {}, state = {}\n", .{ ev.keyval, ev.state } );
+            },
+        }
     }
     return 1;
 }
 
-fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, model: *Model ) callconv(.C) gboolean {
-    const pc = PainterContext {
-        .viewport_PX = glzGetViewport_PX( ),
-        .lpxToPx = gtkzScaleFactor( @ptrCast( *GtkWidget, glArea ) ),
-    };
+fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, modelPtr: *?*Model ) callconv(.C) gboolean {
+    if ( modelPtr.* ) |model| {
+        const pc = PainterContext {
+            .viewport_PX = glzGetViewport_PX( ),
+            .lpxToPx = gtkzScaleFactor( @ptrCast( *GtkWidget, glArea ) ),
+        };
 
-    model.axis.setViewport_PX( pc.viewport_PX );
+        model.axis.setViewport_PX( pc.viewport_PX );
 
-    model.rootPaintable.painter.glPaint( &pc ) catch |e| {
-        // MultiPaintable shouldn't ever return an error
-        std.debug.warn( "Failed to paint root: painter = {}, error = {}", .{ model.rootPaintable.painter.name, e } );
-    };
-
-    return 0;
-}
-
-fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, model: *Model ) callconv(.C) gboolean {
-    gtkzDisconnectHandlers( model.handlersToDisconnect.items );
-    model.handlersToDisconnect.items.len = 0;
-
-    if ( glzHasCurrentContext( ) ) {
-        model.rootPaintable.painter.glDeinit( );
+        model.rootPaintable.painter.glPaint( &pc ) catch |e| {
+            // MultiPaintable shouldn't ever return an error
+            std.debug.warn( "Failed to paint root: painter = {}, error = {}", .{ model.rootPaintable.painter.name, e } );
+        };
     }
+    return 0;
+}
 
+fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, modelPtr: *?*Model ) callconv(.C) gboolean {
+    if ( modelPtr.* ) |model| {
+        model.widgetsToRepaint.items.len = 0;
+
+        gtkzDisconnectHandlers( model.handlersToDisconnect.items );
+        model.handlersToDisconnect.items.len = 0;
+
+        if ( glzHasCurrentContext( ) ) {
+            model.rootPaintable.painter.glDeinit( );
+        }
+    }
     return 0;
 }
 
 
-
-fn runSimulation( model: *Model ) !void {
-    // FIXME: Model isn't thread-safe
-    const allocator = model.allocator;
+fn runSimulation( modelPtr: *?*Model ) !void {
+    var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
+    const allocator = &gpa.allocator;
 
     const tStart = 0.0;
     const xsStart = [_]f64 { -6.0,-3.0, -6.5,-3.0, -6.1,-3.2 };
@@ -224,7 +238,7 @@ fn runSimulation( model: *Model ) !void {
     // FIXME: Exit condition?
     while ( true ) {
         // Send current dot positions to the UI
-        var dotsUpdater = try DotsUpdater.createAndInit( allocator, model, xsCurr );
+        var dotsUpdater = try DotsUpdater.createAndInit( allocator, modelPtr, xsCurr );
         gtkzInvokeOnce( &dotsUpdater.runnable );
 
         // Compute new dot positions
@@ -324,11 +338,11 @@ fn runSimulation( model: *Model ) !void {
 
 const DotsUpdater = struct {
     allocator: *Allocator,
-    model: *Model,
+    modelPtr: *?*Model,
     dots: []GLfloat,
     runnable: Runnable,
 
-    pub fn createAndInit( allocator: *Allocator, model: *Model, dots: []f64 ) !*DotsUpdater {
+    pub fn createAndInit( allocator: *Allocator, modelPtr: *?*Model, dots: []f64 ) !*DotsUpdater {
         var dotsCopy = try allocator.alloc( GLfloat, dots.len );
         for ( dots ) |coord,i| {
             dotsCopy[ i ] = @floatCast( GLfloat, coord );
@@ -337,7 +351,7 @@ const DotsUpdater = struct {
         const self = try allocator.create( DotsUpdater );
         self.* = .{
             .allocator = allocator,
-            .model = model,
+            .modelPtr = modelPtr,
             .dots = dotsCopy,
             .runnable = .{
                 .runFn = runAndDestroySelf,
@@ -348,56 +362,61 @@ const DotsUpdater = struct {
 
     fn runAndDestroySelf( runnable: *Runnable ) !void {
         const self = @fieldParentPtr( DotsUpdater, "runnable", runnable );
+        if ( self.modelPtr.* ) |model| {
+            try model.dotsPaintable.coords.resize( self.dots.len );
+            try model.dotsPaintable.coords.replaceRange( 0, self.dots.len, self.dots );
+            model.dotsPaintable.coordsModified = true;
+            gtkzDrawWidgets( model.widgetsToRepaint.items );
+        }
 
-        // FIXME: Don't do any of this if the model has been deinited
-        try self.model.dotsPaintable.coords.resize( self.dots.len );
-        try self.model.dotsPaintable.coords.replaceRange( 0, self.dots.len, self.dots );
-        self.model.dotsPaintable.coordsModified = true;
-        gtkzDrawWidgets( self.model.widgetsToRepaint.items );
-
+        // TODO: If we ever allow simulation thread to end, this allocator may not be around anymore
+        self.allocator.free( self.dots );
         self.allocator.destroy( self );
     }
 };
 
-fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
+fn onActivate( app_: *GtkApplication, modelPtr_: *?*Model ) callconv(.C) void {
     struct {
-        fn run( app: *GtkApplication, model: *Model ) !void {
-            const glArea = gtk_gl_area_new( );
-            gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
-            gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
-            gtk_widget_set_can_focus( glArea, 1 );
-            try model.widgetsToRepaint.append( glArea );
+        fn run( app: *GtkApplication, modelPtr: *?*Model ) !void {
+            if ( modelPtr.* ) |model| {
+                const glArea = gtk_gl_area_new( );
+                gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
+                gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
+                gtk_widget_set_can_focus( glArea, 1 );
+                try model.widgetsToRepaint.append( glArea );
 
-            const window = gtk_application_window_new( app );
-            gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
-            gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
-            gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
-            gtk_widget_show_all( window );
-            try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
+                const window = gtk_application_window_new( app );
+                gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
+                gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
+                gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
+                gtk_widget_show_all( window );
+                try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
 
-            gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
+                gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
 
-            try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
-                try gtkzConnectHandler( glArea,               "render", @ptrCast( GCallback, onRender        ), model ),
-                try gtkzConnectHandler( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), model ),
-                try gtkzConnectHandler( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), model ),
-                try gtkzConnectHandler( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), model ),
-                try gtkzConnectHandler( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), model ),
-                try gtkzConnectHandler( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), model ),
-                try gtkzConnectHandler( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), model ),
-                try gtkzConnectHandler( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), model ),
-            } );
+                try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
+                    try gtkzConnectHandler( glArea,               "render", @ptrCast( GCallback, onRender        ), modelPtr ),
+                    try gtkzConnectHandler( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), modelPtr ),
+                    try gtkzConnectHandler( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), modelPtr ),
+                    try gtkzConnectHandler( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), modelPtr ),
+                    try gtkzConnectHandler( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), modelPtr ),
+                    try gtkzConnectHandler( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), modelPtr ),
+                    try gtkzConnectHandler( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), modelPtr ),
+                    try gtkzConnectHandler( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), modelPtr ),
+                } );
+            }
 
-            // FIXME: Dispose of thread somehow -- maybe "running" flag in model, and thread.wait() somewhere
-            const thread = try std.Thread.spawn( model, runSimulation );
-
+            // TODO: Don't leave simulation thread to run forever
+            const thread = try std.Thread.spawn( modelPtr, runSimulation );
         }
-    }.run( app_, model_ ) catch |e| {
+    }.run( app_, modelPtr_ ) catch |e| {
         std.debug.warn( "Failed to activate: {}\n", .{ e } );
         if ( @errorReturnTrace( ) ) |trace| {
             std.debug.dumpStackTrace( trace.* );
         }
-        gtkzCloseWindows( model_.windowsToClose.items );
+        if ( modelPtr_.* ) |model| {
+            gtkzCloseWindows( model.windowsToClose.items );
+        }
     };
 }
 
@@ -424,6 +443,8 @@ pub fn main( ) !void {
     dotsPaintable.rgba = [_]GLfloat { 1.0, 0.0, 0.0, 1.0 };
 
     var model = Model.init( allocator, &axis, &dotsPaintable );
+    var modelPtr = @as( ?*Model, &model );
+    defer modelPtr = null;
     defer model.deinit( );
     try model.rootPaintable.childPainters.append( &bgPaintable.painter );
     try model.rootPaintable.childPainters.append( &boxPaintable.painter );
@@ -435,7 +456,7 @@ pub fn main( ) !void {
     defer g_object_unref( app );
 
     try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
-        try gtkzConnectHandler( app, "activate", @ptrCast( GCallback, onActivate ), &model ),
+        try gtkzConnectHandler( app, "activate", @ptrCast( GCallback, onActivate ), &modelPtr ),
     } );
 
     var args = try ProcessArgs.init( allocator );
