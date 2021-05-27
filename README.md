@@ -5,6 +5,8 @@ A toy project for learning about some things:
  * GUI toolkits with OpenGL support ([GLFW](https://www.glfw.org/), [SDL2](http://wiki.libsdl.org/), [GTK3](https://developer.gnome.org/gtk3/stable/))
  * [Verlet integration](https://en.wikipedia.org/wiki/Verlet_integration) for simple physics modeling
 
+    <img src="./misc/20210526_sproingy.gif" width="480" height="360">
+
 
 ## Build & Run
 

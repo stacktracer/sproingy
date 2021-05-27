@@ -371,7 +371,7 @@ fn onActivate( app_: *GtkApplication, model_: *Model ) callconv(.C) void {
             const window = gtk_application_window_new( app );
             gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
             gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
-            gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 800, 600 );
+            gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
             gtk_widget_show_all( window );
             try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
 
@@ -406,8 +406,8 @@ pub fn main( ) !void {
     const allocator = &gpa.allocator;
 
 
-    var axis = Axis2.init( xywh( 0, 0, 800, 600 ) );
-    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 47, 47 ) );
+    var axis = Axis2.init( xywh( 0, 0, 480, 360 ) );
+    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 28.2, 28.2 ) );
 
     var bgPaintable = ClearPaintable.init( "bg", GL_COLOR_BUFFER_BIT );
     bgPaintable.rgba = [_]GLfloat { 0.4, 0.4, 0.4, 1.0 };

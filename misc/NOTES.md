@@ -1,4 +1,12 @@
 
+Record a GIF:
+```
+# Doesn't work in Wayland
+./zig-cache/bin/sproingy & ( sleep 0.2 && ffmpeg -y -f x11grab -framerate 30 -video_size 482x390 -i :0.0+719,391 -c:v libx264rgb -crf 0 -preset ultrafast sproingy0.mkv )
+ffmpeg -frames 1080 -i sproingy0.mkv4 -vf "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" sproingy0.gif
+gifsicle -O9 --lossy=200 -o sproingy.gif sproingy0.gif
+```
+
 Run under Valgrind:
 ```
 valgrind \
