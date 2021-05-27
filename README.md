@@ -17,3 +17,8 @@ To build and run the first time:
 header-tweaks.sh && zig build run
 ```
 The header-tweaks script only needs to be run the first time you build. It makes local copies of some GTK headers, and patches them so that Zig can digest them easily.
+
+
+## License
+
+[BSD 3-Clause](LICENSE)
