@@ -356,6 +356,9 @@ fn runSimulation( modelPtr: *?*Model ) !void {
         }
 
         for ( dotIndices ) |_,dotIndex| {
+            // TODO: Profile, speed up
+            // TODO: Dedupe code
+
             // Inputs
             var aCurr = [_]f64 { undefined } ** n;
             var vCurr = [_]f64 { undefined } ** n;
@@ -379,35 +382,102 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                 var tBounce = std.math.inf( f64 );
                 var vFactor = [_]f64 { 1.0 } ** n;
                 for ( xNext ) |xNext_i,i| {
+                    // TODO: Also check stationary point
                     if ( xNext_i <= xMins[i] ) {
                         // The t at which we hit the wall, i.e. x[i] - xMin[i] = 0
                         const A = 0.5*aCurr[i];
                         const B = vCurr[i];
                         const C = xCurr[i] - xMins[i];
-                        const D = B*B - 4.0*A*C;
-                        if ( D >= 0.0 ) {
-                            const sqrtD = sqrt( D );
-                            const oneOverTwoA = 0.5 / A;
-                            const tWallPlus_i = ( -B + sqrtD )*oneOverTwoA;
-                            if ( 0 <= tWallPlus_i and tWallPlus_i < tFull ) {
-                                if ( tWallPlus_i < tBounce ) {
-                                    tBounce = tWallPlus_i;
+                        if ( A == 0.0 ) {
+                            // Bt + C = 0
+                            const tWall_i = -C / B;
+                            if ( 0 <= tWall_i and tWall_i < tFull ) {
+                                if ( tWall_i < tBounce ) {
+                                    tBounce = tWall_i;
                                     vFactor = [_]f64 { 1.0 } ** n;
                                     vFactor[i] = -1.0;
                                 }
-                                else if ( tWallPlus_i == tBounce ) {
+                                else if ( tWall_i == tBounce ) {
                                     vFactor[i] = -1.0;
                                 }
                             }
-                            const tWallMinus_i = ( -B - sqrtD )*oneOverTwoA;
-                            if ( 0 <= tWallMinus_i and tWallMinus_i < tFull ) {
-                                if ( tWallMinus_i < tBounce ) {
-                                    tBounce = tWallMinus_i;
+                        }
+                        else {
+                            const D = B*B - 4.0*A*C;
+                            if ( D >= 0.0 ) {
+                                const sqrtD = sqrt( D );
+                                const oneOverTwoA = 0.5 / A;
+                                const tWallPlus_i = ( -B + sqrtD )*oneOverTwoA;
+                                if ( 0 <= tWallPlus_i and tWallPlus_i < tFull ) {
+                                    if ( tWallPlus_i < tBounce ) {
+                                        tBounce = tWallPlus_i;
+                                        vFactor = [_]f64 { 1.0 } ** n;
+                                        vFactor[i] = -1.0;
+                                    }
+                                    else if ( tWallPlus_i == tBounce ) {
+                                        vFactor[i] = -1.0;
+                                    }
+                                }
+                                const tWallMinus_i = ( -B - sqrtD )*oneOverTwoA;
+                                if ( 0 <= tWallMinus_i and tWallMinus_i < tFull ) {
+                                    if ( tWallMinus_i < tBounce ) {
+                                        tBounce = tWallMinus_i;
+                                        vFactor = [_]f64 { 1.0 } ** n;
+                                        vFactor[i] = -1.0;
+                                    }
+                                    else if ( tWallMinus_i == tBounce ) {
+                                        vFactor[i] = -1.0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if ( xNext_i >= xMaxs[i] ) {
+                        // The t at which we hit the wall, i.e. x[i] - xMax[i] = 0
+                        const A = 0.5*aCurr[i];
+                        const B = vCurr[i];
+                        const C = xCurr[i] - xMaxs[i];
+                        if ( A == 0.0 ) {
+                            // Bt + C = 0
+                            const tWall_i = -C / B;
+                            if ( 0 <= tWall_i and tWall_i < tFull ) {
+                                if ( tWall_i < tBounce ) {
+                                    tBounce = tWall_i;
                                     vFactor = [_]f64 { 1.0 } ** n;
                                     vFactor[i] = -1.0;
                                 }
-                                else if ( tWallMinus_i == tBounce ) {
+                                else if ( tWall_i == tBounce ) {
                                     vFactor[i] = -1.0;
+                                }
+                            }
+                        }
+                        else {
+                            // At² + Bt + C = 0
+                            const D = B*B - 4.0*A*C;
+                            if ( D >= 0.0 ) {
+                                const sqrtD = sqrt( D );
+                                const oneOverTwoA = 0.5 / A;
+                                const tWallPlus_i = ( -B + sqrtD )*oneOverTwoA;
+                                if ( 0 <= tWallPlus_i and tWallPlus_i < tFull ) {
+                                    if ( tWallPlus_i < tBounce ) {
+                                        tBounce = tWallPlus_i;
+                                        vFactor = [_]f64 { 1.0 } ** n;
+                                        vFactor[i] = -1.0;
+                                    }
+                                    else if ( tWallPlus_i == tBounce ) {
+                                        vFactor[i] = -1.0;
+                                    }
+                                }
+                                const tWallMinus_i = ( -B - sqrtD )*oneOverTwoA;
+                                if ( 0 <= tWallMinus_i and tWallMinus_i < tFull ) {
+                                    if ( tWallMinus_i < tBounce ) {
+                                        tBounce = tWallMinus_i;
+                                        vFactor = [_]f64 { 1.0 } ** n;
+                                        vFactor[i] = -1.0;
+                                    }
+                                    else if ( tWallMinus_i == tBounce ) {
+                                        vFactor[i] = -1.0;
+                                    }
                                 }
                             }
                         }
