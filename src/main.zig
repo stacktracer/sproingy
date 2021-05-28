@@ -384,7 +384,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                     }
 
                     // The dt at which x[i] is stationary, i.e. d(xi)/d(dt) = 0
-                    const dtSi = vBi / ( 2.0 * aB[i] );
+                    const dtSi = vBi / ( -2.0 * aB[i] );
                     if ( 0 <= dtSi and dtSi < dt ) {
                         const xSi = xB[i] + vBi*dtSi + aB[i]*dtSi*dtSi;
                         std.debug.print( "dtSi = {}, xSi = {}\n", .{ dtSi, xSi } );
