@@ -336,6 +336,62 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                     xC[i] = xBi + ( xBi - xA[i] )*dtRatio + aB[i]*dtSquared;
                 }
 
+                for ( xC ) |xCi,i| {
+                    const vBi = ( xB[i] - xA[i] ) / dtPrev;
+
+                    if ( xCi <= xMins[i] ) {
+                        // The dt at which we hit the wall, i.e. x[i] - xMin[i] = 0
+                        const A = aB[i];
+                        const B = vBi;
+                        const C = xB[i] - xMins[i];
+                        const D = B*B - 4.0*A*C;
+                        if ( D >= 0.0 ) {
+                            const sqrtD = sqrt( D );
+                            const oneOverTwoA = 0.5 / A;
+                            const dtWiPlus = ( -B + sqrtD )*oneOverTwoA;
+                            if ( 0 <= dtWiPlus and dtWiPlus < dt ) {
+                                const xWiPlus = xB[i] + vBi*dtWiPlus + aB[i]*dtWiPlus*dtWiPlus;
+                                std.debug.print( "dtWiPlus = {}, xWiPlus = {}\n", .{ dtWiPlus, xWiPlus } );
+                            }
+                            const dtWiMinus = ( -B - sqrtD )*oneOverTwoA;
+                            if ( 0 <= dtWiMinus and dtWiMinus < dt ) {
+                                const xWiMinus = xB[i] + vBi*dtWiMinus + aB[i]*dtWiMinus*dtWiMinus;
+                                std.debug.print( "dtWiMinus = {}, xWiMinus = {}\n", .{ dtWiMinus, xWiMinus } );
+                            }
+                        }
+                    }
+
+                    if ( xCi >= xMaxs[i] ) {
+                        // The dt at which we hit the wall, i.e. x[i] - xMax[i] = 0
+                        const A = aB[i];
+                        const B = vBi;
+                        const C = xB[i] - xMaxs[i];
+                        const D = B*B - 4.0*A*C;
+                        if ( D >= 0.0 ) {
+                            const sqrtD = sqrt( D );
+                            const oneOverTwoA = 0.5 / A;
+                            const dtWiPlus = ( -B + sqrtD )*oneOverTwoA;
+                            if ( 0 <= dtWiPlus and dtWiPlus < dt ) {
+                                const xWiPlus = xB[i] + vBi*dtWiPlus + aB[i]*dtWiPlus*dtWiPlus;
+                                std.debug.print( "dtWiPlus = {}, xWiPlus = {}\n", .{ dtWiPlus, xWiPlus } );
+                            }
+                            const dtWiMinus = ( -B - sqrtD )*oneOverTwoA;
+                            if ( 0 <= dtWiMinus and dtWiMinus < dt ) {
+                                const xWiMinus = xB[i] + vBi*dtWiMinus + aB[i]*dtWiMinus*dtWiMinus;
+                                std.debug.print( "dtWiMinus = {}, xWiMinus = {}\n", .{ dtWiMinus, xWiMinus } );
+                            }
+                        }
+                    }
+
+                    // The dt at which x[i] is stationary, i.e. d(xi)/d(dt) = 0
+                    const dtSi = vBi / ( 2.0 * aB[i] );
+                    if ( 0 <= dtSi and dtSi < dt ) {
+                        const xSi = xB[i] + vBi*dtSi + aB[i]*dtSi*dtSi;
+                        std.debug.print( "dtSi = {}, xSi = {}\n", .{ dtSi, xSi } );
+                    }
+                }
+
+
                 // FIXME: Bounce here, accelerating properly on each segment
                 //
                 // Assume we start the timestep NOT in a wall. Check whether
