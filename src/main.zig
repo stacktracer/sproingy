@@ -212,7 +212,7 @@ fn onActivate( app_: *GtkApplication, modelPtr_: *?*Model ) callconv(.C) void {
                 } );
             }
 
-            // TODO: Don't leave simulation thread to run forever
+            // TODO: Maybe let simulation thread terminate when the UI closes?
             const thread = try std.Thread.spawn( modelPtr, runSimulation );
         }
     }.run( app_, modelPtr_ ) catch |e| {
@@ -287,7 +287,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     // Next
     var xsNext = try allocator.alloc( f64, coordCount );
 
-    // FIXME: Exit condition?
+    // TODO: Exit condition?
     while ( true ) {
         // Send current dot coords to the UI
         var dotsUpdater = try DotsUpdater.createAndInit( allocator, modelPtr, xsCurr );
