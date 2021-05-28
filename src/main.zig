@@ -22,9 +22,10 @@ const Model = struct {
     windowsToClose: ArrayList( *GtkWindow ),
 
     axis: *Axis2,
+    boxPaintable: *DrawArraysPaintable,
     dotsPaintable: *DotsPaintable,
 
-    pub fn init( allocator: *Allocator, axis: *Axis2, dotsPaintable: *DotsPaintable ) Model {
+    pub fn init( allocator: *Allocator, axis: *Axis2, boxPaintable: *DrawArraysPaintable, dotsPaintable: *DotsPaintable ) Model {
         return Model {
             .allocator = allocator,
             .rootPaintable = MultiPaintable.init( "root", allocator ),
@@ -35,6 +36,7 @@ const Model = struct {
             .windowsToClose = ArrayList( *GtkWindow ).init( allocator ),
 
             .axis = axis,
+            .boxPaintable = boxPaintable,
             .dotsPaintable = dotsPaintable,
         };
     }
@@ -243,6 +245,11 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     const dotMass = 10.0;
     const dotMassRecip = 1.0 / dotMass;
 
+    // Send box coords to the UI
+    var boxCoords = [_]f64 { xMins[0],xMaxs[1], xMins[0],xMins[1], xMaxs[0],xMaxs[1], xMaxs[0],xMins[1] };
+    var boxUpdater = try BoxUpdater.createAndInit( allocator, modelPtr, &boxCoords );
+    gtkzInvokeOnce( &boxUpdater.runnable );
+
     // Pre-compute dots' start indices, for easy iteration later
     const dotCount = @divTrunc( coordCount, 2 );
     var dotIndices = range( 0, dotCount, 1 );
@@ -282,7 +289,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
 
     // FIXME: Exit condition?
     while ( true ) {
-        // Send current dot positions to the UI
+        // Send current dot coords to the UI
         var dotsUpdater = try DotsUpdater.createAndInit( allocator, modelPtr, xsCurr );
         gtkzInvokeOnce( &dotsUpdater.runnable );
 
@@ -381,23 +388,62 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     }
 }
 
+const BoxUpdater = struct {
+    allocator: *Allocator,
+    modelPtr: *?*Model,
+    boxCoords: []GLfloat,
+    runnable: Runnable,
+
+    pub fn createAndInit( allocator: *Allocator, modelPtr: *?*Model, boxCoords: []f64 ) !*BoxUpdater {
+        var boxCoordsCopy = try allocator.alloc( GLfloat, boxCoords.len );
+        for ( boxCoords ) |coord,i| {
+            boxCoordsCopy[ i ] = @floatCast( GLfloat, coord );
+        }
+
+        const self = try allocator.create( BoxUpdater );
+        self.* = .{
+            .allocator = allocator,
+            .modelPtr = modelPtr,
+            .boxCoords = boxCoordsCopy,
+            .runnable = .{
+                .runFn = runAndDestroySelf,
+            },
+        };
+        return self;
+    }
+
+    fn runAndDestroySelf( runnable: *Runnable ) !void {
+        const self = @fieldParentPtr( BoxUpdater, "runnable", runnable );
+        if ( self.modelPtr.* ) |model| {
+            try model.boxPaintable.coords.resize( self.boxCoords.len );
+            try model.boxPaintable.coords.replaceRange( 0, self.boxCoords.len, self.boxCoords );
+            model.boxPaintable.coordsModified = true;
+            gtkzDrawWidgets( model.widgetsToRepaint.items );
+        }
+
+        // TODO: If we ever allow simulation thread to end, this allocator may not be around anymore
+        self.allocator.free( self.boxCoords );
+        self.allocator.destroy( self );
+    }
+};
+
 const DotsUpdater = struct {
     allocator: *Allocator,
     modelPtr: *?*Model,
-    dots: []GLfloat,
+    dotCoords: []GLfloat,
     runnable: Runnable,
 
-    pub fn createAndInit( allocator: *Allocator, modelPtr: *?*Model, dots: []f64 ) !*DotsUpdater {
-        var dotsCopy = try allocator.alloc( GLfloat, dots.len );
-        for ( dots ) |coord,i| {
-            dotsCopy[ i ] = @floatCast( GLfloat, coord );
+    pub fn createAndInit( allocator: *Allocator, modelPtr: *?*Model, dotCoords: []f64 ) !*DotsUpdater {
+        var dotCoordsCopy = try allocator.alloc( GLfloat, dotCoords.len );
+        for ( dotCoords ) |coord,i| {
+            dotCoordsCopy[ i ] = @floatCast( GLfloat, coord );
         }
 
         const self = try allocator.create( DotsUpdater );
         self.* = .{
             .allocator = allocator,
             .modelPtr = modelPtr,
-            .dots = dotsCopy,
+            .dotCoords = dotCoordsCopy,
             .runnable = .{
                 .runFn = runAndDestroySelf,
             },
@@ -408,14 +454,14 @@ const DotsUpdater = struct {
     fn runAndDestroySelf( runnable: *Runnable ) !void {
         const self = @fieldParentPtr( DotsUpdater, "runnable", runnable );
         if ( self.modelPtr.* ) |model| {
-            try model.dotsPaintable.coords.resize( self.dots.len );
-            try model.dotsPaintable.coords.replaceRange( 0, self.dots.len, self.dots );
+            try model.dotsPaintable.coords.resize( self.dotCoords.len );
+            try model.dotsPaintable.coords.replaceRange( 0, self.dotCoords.len, self.dotCoords );
             model.dotsPaintable.coordsModified = true;
             gtkzDrawWidgets( model.widgetsToRepaint.items );
         }
 
         // TODO: If we ever allow simulation thread to end, this allocator may not be around anymore
-        self.allocator.free( self.dots );
+        self.allocator.free( self.dotCoords );
         self.allocator.destroy( self );
     }
 };
@@ -435,15 +481,12 @@ pub fn main( ) !void {
     var boxPaintable = DrawArraysPaintable.init( "box", &axis, GL_TRIANGLE_STRIP, allocator );
     defer boxPaintable.deinit( );
     boxPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
-    var boxCoords = [_]GLfloat { -8.0,6.0, -8.0,-6.0, 8.0,6.0, 8.0,-6.0 }; // FIXME: Put box coords in model
-    try boxPaintable.coords.resize( boxCoords.len );
-    try boxPaintable.coords.replaceRange( 0, boxCoords.len, &boxCoords );
 
     var dotsPaintable = DotsPaintable.init( "dots", &axis, allocator );
     defer dotsPaintable.deinit( );
     dotsPaintable.rgba = [_]GLfloat { 1.0, 0.0, 0.0, 1.0 };
 
-    var model = Model.init( allocator, &axis, &dotsPaintable );
+    var model = Model.init( allocator, &axis, &boxPaintable, &dotsPaintable );
     var modelPtr = @as( ?*Model, &model );
     defer modelPtr = null;
     defer model.deinit( );
