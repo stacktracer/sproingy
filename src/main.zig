@@ -227,7 +227,112 @@ fn onActivate( app_: *GtkApplication, modelPtr_: *?*Model ) callconv(.C) void {
 }
 
 
+
+
+
+
+
+const Accelerator = struct {
+    pub fn add( self: *const Accelerator, xsCurr: []f64, dotIndex: usize, a: *[2]f64 ) void {
+
+    }
+};
+
+pub fn swapPtrs( comptime T: type, a: *[]T, b: *[]T ) void {
+    const temp = a.ptr;
+    a.ptr = b.ptr;
+    b.ptr = temp;
+}
+
 fn runSimulation( modelPtr: *?*Model ) !void {
+    comptime const n = 2;
+
+    var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
+    const allocator = &gpa.allocator;
+
+    const xsStart = [_]f64 { -6.0,-3.0, -6.5,-3.0, -6.1,-3.2 };
+    const coordCount = xsStart.len;
+    const vsStart = [ coordCount ]f64 { 7.0,13.0,  2.0,14.0,  5.0,6.0 };
+
+    const accelerator = Accelerator {};
+
+    // Pre-compute dots' start indices, for easy iteration later
+    const dotCount = @divTrunc( coordCount, n );
+    var dotIndices = [_]usize { undefined } ** dotCount; {
+        var dotIndex = @as( usize, 0 );
+        while ( dotIndex < dotCount ) : ( dotIndex += 1 ) {
+            dotIndices[ dotIndex ] = dotIndex;
+        }
+    }
+
+    // TODO: Use SIMD Vectors
+
+    const tFull = 2e-7;
+    const tHalf = 0.5*tFull;
+
+    var coordArrays: [7][coordCount]f64 = undefined;
+    var xsCurr = @as( []f64, &coordArrays[0] );
+    var xsNext = @as( []f64, &coordArrays[1] );
+    var vsCurr = @as( []f64, &coordArrays[2] );
+    var vsHalf = @as( []f64, &coordArrays[3] );
+    var vsNext = @as( []f64, &coordArrays[4] );
+    var asCurr = @as( []f64, &coordArrays[5] );
+    var asNext = @as( []f64, &coordArrays[6] );
+
+    xsCurr[ 0..coordCount ].* = xsStart;
+    vsCurr[ 0..coordCount ].* = vsStart;
+    for ( dotIndices ) |_,dotIndex| {
+        var aCurr = asCurr[ dotIndex*n.. ][ 0..n ];
+        aCurr.* = [_]f64 { 0.0 } ** n;
+        accelerator.add( xsCurr, dotIndex, aCurr );
+    }
+
+    const frameInterval_MILLIS = 15;
+    var nextFrame_PMILLIS = @as( i64, std.math.minInt( i64 ) );
+    while ( true ) {
+        // Send dot coords to the UI periodically
+        if ( std.time.milliTimestamp( ) >= nextFrame_PMILLIS ) {
+            var dotsUpdater = try DotsUpdater.createAndInit( allocator, modelPtr, xsCurr );
+            gtkzInvokeOnce( &dotsUpdater.runnable );
+            nextFrame_PMILLIS = std.time.milliTimestamp( ) + 15;
+        }
+
+        for ( vsCurr ) |vCurr,coordIndex| {
+            vsHalf[ coordIndex ] = vCurr + asCurr[ coordIndex ]*tHalf;
+        }
+
+        for ( xsCurr ) |xCurr,coordIndex| {
+            xsNext[ coordIndex ] = xCurr + vsHalf[ coordIndex ]*tFull;
+        }
+
+        for ( dotIndices ) |_,dotIndex| {
+            var aNext = asNext[ dotIndex*n.. ][ 0..n ];
+            aNext.* = [_]f64 { 0.0 } ** n;
+            accelerator.add( xsNext, dotIndex, aNext );
+        }
+
+        for ( vsHalf ) |vHalf,coordIndex| {
+            vsNext[ coordIndex ] = vHalf + asNext[ coordIndex ]*tHalf;
+        }
+
+        // Rotate slices
+        swapPtrs( f64, &asCurr, &asNext );
+        swapPtrs( f64, &vsCurr, &vsNext );
+        swapPtrs( f64, &xsCurr, &xsNext );
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+fn runSimulation_OLD( modelPtr: *?*Model ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
     const allocator = &gpa.allocator;
 
