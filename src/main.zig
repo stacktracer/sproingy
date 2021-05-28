@@ -365,6 +365,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
             var xCurr = [_]f64 { undefined } ** n;
 
             // Initialize inputs for first iteration
+            // TODO: Avoid this copy, since it happens for every dot
             aCurr = asCurr[ dotIndex*n.. ][ 0..n ].*;
             vCurr = vsCurr[ dotIndex*n.. ][ 0..n ].*;
             xCurr = xsCurr[ dotIndex*n.. ][ 0..n ].*;
@@ -372,7 +373,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
             // Temp space
             var vHalf = vsHalf[ dotIndex*n.. ][ 0..n ];
 
-            // Actual outputs
+            // Outputs
             var aNext = asNext[ dotIndex*n.. ][ 0..n ];
             var vNext = vsNext[ dotIndex*n.. ][ 0..n ];
             var xNext = xsNext[ dotIndex*n.. ][ 0..n ];
