@@ -233,10 +233,10 @@ fn onActivate( app_: *GtkApplication, modelPtr_: *?*Model ) callconv(.C) void {
 
 
 const Accelerator = struct {
-    addAccelerationFn: fn ( self: *const Accelerator, xs: []const f64, dotIndex: usize, a_OUT: *[2]f64 ) void,
+    addAccelerationFn: fn ( self: *const Accelerator, dotIndex: usize, x: [2]f64, a_OUT: *[2]f64 ) void,
 
-    pub fn addAcceleration( self: *const Accelerator, xs: []const f64, dotIndex: usize, a_OUT: *[2]f64 ) void {
-        return self.addAccelerationFn( self, xs, dotIndex, a_OUT );
+    pub fn addAcceleration( self: *const Accelerator, dotIndex: usize, x: [2]f64, a_OUT: *[2]f64 ) void {
+        return self.addAccelerationFn( self, dotIndex, x, a_OUT );
     }
 };
 
@@ -253,7 +253,7 @@ const ConstantAcceleration = struct {
         };
     }
 
-    fn addAcceleration( accelerator: *const Accelerator, xs: []const f64, dotIndex: usize, a_OUT: *[2]f64 ) void {
+    fn addAcceleration( accelerator: *const Accelerator, dotIndex: usize, x: [2]f64, a_OUT: *[2]f64 ) void {
         const self = @fieldParentPtr( ConstantAcceleration, "accelerator", accelerator );
         for ( self.acceleration ) |ai,i| {
             a_OUT[ i ] += ai;
@@ -282,6 +282,14 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     var gravity = ConstantAcceleration.init( [_]f64 { 0.0, -9.80665 } );
     const accelerators = [_]*Accelerator { &gravity.accelerator };
 
+    const xMins = [n]f64 { -8.0, -6.0 };
+    const xMaxs = [n]f64 {  8.0,  6.0 };
+
+    // Send box coords to the UI
+    var boxCoords = [_]f64 { xMins[0],xMaxs[1], xMins[0],xMins[1], xMaxs[0],xMaxs[1], xMaxs[0],xMins[1] };
+    var boxUpdater = try BoxUpdater.createAndInit( allocator, modelPtr, &boxCoords );
+    gtkzInvokeOnce( &boxUpdater.runnable );
+
     // Pre-compute dots' start indices, for easy iteration later
     const dotCount = @divTrunc( coordCount, n );
     var dotIndices = [_]usize { undefined } ** dotCount; {
@@ -293,7 +301,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
 
     // TODO: Use SIMD Vectors
 
-    const tFull = 2e-7;
+    const tFull = @as( f64, 200e-9 );
     const tHalf = 0.5*tFull;
 
     var coordArrays: [7][coordCount]f64 = undefined;
@@ -308,10 +316,11 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     xsCurr[ 0..coordCount ].* = xsStart;
     vsCurr[ 0..coordCount ].* = vsStart;
     for ( dotIndices ) |_,dotIndex| {
+        const xCurr = xsCurr[ dotIndex*n.. ][ 0..n ];
         var aCurr = asCurr[ dotIndex*n.. ][ 0..n ];
         aCurr.* = [_]f64 { 0.0 } ** n;
         for ( accelerators ) |accelerator| {
-            accelerator.addAcceleration( xsCurr, dotIndex, aCurr );
+            accelerator.addAcceleration( dotIndex, xCurr.*, aCurr );
         }
     }
 
@@ -334,15 +343,129 @@ fn runSimulation( modelPtr: *?*Model ) !void {
         }
 
         for ( dotIndices ) |_,dotIndex| {
+            var xNext = xsNext[ dotIndex*n.. ][ 0..n ];
             var aNext = asNext[ dotIndex*n.. ][ 0..n ];
             aNext.* = [_]f64 { 0.0 } ** n;
             for ( accelerators ) |accelerator| {
-                accelerator.addAcceleration( xsNext, dotIndex, aNext );
+                accelerator.addAcceleration( dotIndex, xNext.*, aNext );
             }
         }
 
         for ( vsHalf ) |vHalf,coordIndex| {
             vsNext[ coordIndex ] = vHalf + asNext[ coordIndex ]*tHalf;
+        }
+
+        for ( dotIndices ) |_,dotIndex| {
+            // Inputs
+            var aCurr = [_]f64 { undefined } ** n;
+            var vCurr = [_]f64 { undefined } ** n;
+            var xCurr = [_]f64 { undefined } ** n;
+
+            // Initialize inputs for first iteration
+            aCurr = asCurr[ dotIndex*n.. ][ 0..n ].*;
+            vCurr = vsCurr[ dotIndex*n.. ][ 0..n ].*;
+            xCurr = xsCurr[ dotIndex*n.. ][ 0..n ].*;
+
+            // Temp space
+            var vHalf = vsHalf[ dotIndex*n.. ][ 0..n ];
+
+            // Actual outputs
+            var aNext = asNext[ dotIndex*n.. ][ 0..n ];
+            var vNext = vsNext[ dotIndex*n.. ][ 0..n ];
+            var xNext = xsNext[ dotIndex*n.. ][ 0..n ];
+
+            while ( true ) {
+                // Time of soonest bounce, and what to multiply each velocity coord by
+                var tBounce = std.math.inf( f64 );
+                var vFactor = [_]f64 { 1.0 } ** n;
+                for ( xNext ) |xNext_i,i| {
+                    if ( xNext_i <= xMins[i] ) {
+                        // The t at which we hit the wall, i.e. x[i] - xMin[i] = 0
+                        const A = 0.5*aCurr[i];
+                        const B = vCurr[i];
+                        const C = xCurr[i] - xMins[i];
+                        const D = B*B - 4.0*A*C;
+                        if ( D >= 0.0 ) {
+                            const sqrtD = sqrt( D );
+                            const oneOverTwoA = 0.5 / A;
+                            const tWallPlus_i = ( -B + sqrtD )*oneOverTwoA;
+                            if ( 0 <= tWallPlus_i and tWallPlus_i < tFull ) {
+                                if ( tWallPlus_i < tBounce ) {
+                                    tBounce = tWallPlus_i;
+                                    vFactor = [_]f64 { 1.0 } ** n;
+                                    vFactor[i] = -1.0;
+                                }
+                                else if ( tWallPlus_i == tBounce ) {
+                                    vFactor[i] = -1.0;
+                                }
+                            }
+                            const tWallMinus_i = ( -B - sqrtD )*oneOverTwoA;
+                            if ( 0 <= tWallMinus_i and tWallMinus_i < tFull ) {
+                                if ( tWallMinus_i < tBounce ) {
+                                    tBounce = tWallMinus_i;
+                                    vFactor = [_]f64 { 1.0 } ** n;
+                                    vFactor[i] = -1.0;
+                                }
+                                else if ( tWallMinus_i == tBounce ) {
+                                    vFactor[i] = -1.0;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If soonest bounce is after timestep end, then bounce update is done
+                if ( tBounce > tFull ) {
+                    break;
+                }
+
+                // Update from 0 to tBounce
+                {
+                    var tFull_ = tBounce;
+                    var tHalf_ = 0.5 * tFull_;
+                    var aNext_ = [_]f64 { undefined } ** n;
+                    var vNext_ = [_]f64 { undefined } ** n;
+                    var xNext_ = [_]f64 { undefined } ** n;
+                    for ( vCurr ) |vCurr_i,i| {
+                        vHalf[i] = vCurr_i + aCurr[i]*tHalf_;
+                    }
+                    for ( xCurr ) |xCurr_i,i| {
+                        xNext_[i] = xCurr_i + vHalf[i]*tFull_;
+                    }
+                    aNext_ = [_]f64 { 0.0 } ** n;
+                    for ( accelerators ) |accelerator| {
+                        accelerator.addAcceleration( dotIndex, xNext_, &aNext_ );
+                    }
+                    for ( vHalf ) |vHalf_i,i| {
+                        vNext_[i] = vHalf_i + aNext_[i]*tHalf_;
+                    }
+
+                    aCurr = aNext_;
+                    for ( vNext_ ) |vNext_i,i| {
+                        vCurr[i] = vFactor[i] * vNext_i;
+                    }
+                    xCurr = xNext_;
+                }
+
+                // Update from tBounce to tFull
+                {
+                    var tFull_ = tFull - tBounce;
+                    var tHalf_ = 0.5 * tFull_;
+                    for ( vCurr ) |vCurr_i,i| {
+                        vHalf[i] = vCurr_i + aCurr[i]*tHalf_;
+                    }
+                    for ( xCurr ) |xCurr_i,i| {
+                        xNext[i] = xCurr_i + vHalf[i]*tFull_;
+                    }
+                    aNext.* = [_]f64 { 0.0 } ** n;
+                    for ( accelerators ) |accelerator| {
+                        accelerator.addAcceleration( dotIndex, xNext.*, aNext );
+                    }
+                    for ( vHalf ) |vHalf_i,i| {
+                        vNext[i] = vHalf_i + aNext[i]*tHalf_;
+                    }
+                }
+            }
         }
 
         // Rotate slices
