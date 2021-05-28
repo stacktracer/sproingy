@@ -351,17 +351,16 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                             const dtWiPlus = ( -B + sqrtD )*oneOverTwoA;
                             if ( 0 <= dtWiPlus and dtWiPlus < dt ) {
                                 const xWiPlus = xB[i] + vBi*dtWiPlus + aB[i]*dtWiPlus*dtWiPlus;
-                                std.debug.print( "dtWiPlus = {}, xWiPlus = {}\n", .{ dtWiPlus, xWiPlus } );
+                                std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns,  xWiPlus = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtWiPlus*1e9, xWiPlus } );
                             }
                             const dtWiMinus = ( -B - sqrtD )*oneOverTwoA;
                             if ( 0 <= dtWiMinus and dtWiMinus < dt ) {
                                 const xWiMinus = xB[i] + vBi*dtWiMinus + aB[i]*dtWiMinus*dtWiMinus;
-                                std.debug.print( "dtWiMinus = {}, xWiMinus = {}\n", .{ dtWiMinus, xWiMinus } );
+                                std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns, xWiMinus = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtWiMinus*1e9, xWiMinus } );
                             }
                         }
                     }
-
-                    if ( xCi >= xMaxs[i] ) {
+                    else if ( xCi >= xMaxs[i] ) {
                         // The dt at which we hit the wall, i.e. x[i] - xMax[i] = 0
                         const A = aB[i];
                         const B = vBi;
@@ -373,12 +372,12 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                             const dtWiPlus = ( -B + sqrtD )*oneOverTwoA;
                             if ( 0 <= dtWiPlus and dtWiPlus < dt ) {
                                 const xWiPlus = xB[i] + vBi*dtWiPlus + aB[i]*dtWiPlus*dtWiPlus;
-                                std.debug.print( "dtWiPlus = {}, xWiPlus = {}\n", .{ dtWiPlus, xWiPlus } );
+                                std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns,  xWiPlus = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtWiPlus*1e9, xWiPlus } );
                             }
                             const dtWiMinus = ( -B - sqrtD )*oneOverTwoA;
                             if ( 0 <= dtWiMinus and dtWiMinus < dt ) {
                                 const xWiMinus = xB[i] + vBi*dtWiMinus + aB[i]*dtWiMinus*dtWiMinus;
-                                std.debug.print( "dtWiMinus = {}, xWiMinus = {}\n", .{ dtWiMinus, xWiMinus } );
+                                std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns, xWiMinus = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtWiMinus*1e9, xWiMinus } );
                             }
                         }
                     }
@@ -387,7 +386,12 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                     const dtSi = vBi / ( -2.0 * aB[i] );
                     if ( 0 <= dtSi and dtSi < dt ) {
                         const xSi = xB[i] + vBi*dtSi + aB[i]*dtSi*dtSi;
-                        std.debug.print( "dtSi = {}, xSi = {}\n", .{ dtSi, xSi } );
+                        if ( xSi <= xMins[i] ) {
+                            std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns, xSi = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtSi*1e9, xSi } );
+                        }
+                        else if ( xSi >= xMaxs[i] ) {
+                            std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns, xSi = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtSi*1e9, xSi } );
+                        }
                     }
                 }
 
