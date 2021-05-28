@@ -179,6 +179,51 @@ fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, modelPtr: *?*Model ) call
     return 0;
 }
 
+fn onActivate( app_: *GtkApplication, modelPtr_: *?*Model ) callconv(.C) void {
+    struct {
+        fn run( app: *GtkApplication, modelPtr: *?*Model ) !void {
+            if ( modelPtr.* ) |model| {
+                const glArea = gtk_gl_area_new( );
+                gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
+                gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
+                gtk_widget_set_can_focus( glArea, 1 );
+                try model.widgetsToRepaint.append( glArea );
+
+                const window = gtk_application_window_new( app );
+                gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
+                gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
+                gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
+                gtk_widget_show_all( window );
+                try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
+
+                gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
+
+                try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
+                    try gtkzConnectHandler( glArea,               "render", @ptrCast( GCallback, onRender        ), modelPtr ),
+                    try gtkzConnectHandler( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), modelPtr ),
+                    try gtkzConnectHandler( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), modelPtr ),
+                    try gtkzConnectHandler( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), modelPtr ),
+                    try gtkzConnectHandler( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), modelPtr ),
+                    try gtkzConnectHandler( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), modelPtr ),
+                    try gtkzConnectHandler( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), modelPtr ),
+                    try gtkzConnectHandler( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), modelPtr ),
+                } );
+            }
+
+            // TODO: Don't leave simulation thread to run forever
+            const thread = try std.Thread.spawn( modelPtr, runSimulation );
+        }
+    }.run( app_, modelPtr_ ) catch |e| {
+        std.debug.warn( "Failed to activate: {}\n", .{ e } );
+        if ( @errorReturnTrace( ) ) |trace| {
+            std.debug.dumpStackTrace( trace.* );
+        }
+        if ( modelPtr_.* ) |model| {
+            gtkzCloseWindows( model.windowsToClose.items );
+        }
+    };
+}
+
 
 fn runSimulation( modelPtr: *?*Model ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
@@ -375,50 +420,6 @@ const DotsUpdater = struct {
     }
 };
 
-fn onActivate( app_: *GtkApplication, modelPtr_: *?*Model ) callconv(.C) void {
-    struct {
-        fn run( app: *GtkApplication, modelPtr: *?*Model ) !void {
-            if ( modelPtr.* ) |model| {
-                const glArea = gtk_gl_area_new( );
-                gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
-                gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK );
-                gtk_widget_set_can_focus( glArea, 1 );
-                try model.widgetsToRepaint.append( glArea );
-
-                const window = gtk_application_window_new( app );
-                gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
-                gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
-                gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
-                gtk_widget_show_all( window );
-                try model.windowsToClose.append( @ptrCast( *GtkWindow, window ) );
-
-                gtk_application_add_window( app, @ptrCast( *GtkWindow, window ) );
-
-                try model.handlersToDisconnect.appendSlice( &[_]GtkzHandlerConnection {
-                    try gtkzConnectHandler( glArea,               "render", @ptrCast( GCallback, onRender        ), modelPtr ),
-                    try gtkzConnectHandler( glArea,  "motion-notify-event", @ptrCast( GCallback, onMotion        ), modelPtr ),
-                    try gtkzConnectHandler( glArea,   "button-press-event", @ptrCast( GCallback, onButtonPress   ), modelPtr ),
-                    try gtkzConnectHandler( glArea, "button-release-event", @ptrCast( GCallback, onButtonRelease ), modelPtr ),
-                    try gtkzConnectHandler( glArea,         "scroll-event", @ptrCast( GCallback, onWheel         ), modelPtr ),
-                    try gtkzConnectHandler( glArea,      "key-press-event", @ptrCast( GCallback, onKeyPress      ), modelPtr ),
-                    try gtkzConnectHandler( glArea,    "key-release-event", @ptrCast( GCallback, onKeyRelease    ), modelPtr ),
-                    try gtkzConnectHandler( window,         "delete-event", @ptrCast( GCallback, onWindowClosing ), modelPtr ),
-                } );
-            }
-
-            // TODO: Don't leave simulation thread to run forever
-            const thread = try std.Thread.spawn( modelPtr, runSimulation );
-        }
-    }.run( app_, modelPtr_ ) catch |e| {
-        std.debug.warn( "Failed to activate: {}\n", .{ e } );
-        if ( @errorReturnTrace( ) ) |trace| {
-            std.debug.dumpStackTrace( trace.* );
-        }
-        if ( modelPtr_.* ) |model| {
-            gtkzCloseWindows( model.windowsToClose.items );
-        }
-    };
-}
 
 pub fn main( ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
