@@ -233,18 +233,42 @@ fn onActivate( app_: *GtkApplication, modelPtr_: *?*Model ) callconv(.C) void {
 
 
 const Accelerator = struct {
-    pub fn add( self: *const Accelerator, xsCurr: []f64, dotIndex: usize, a: *[2]f64 ) void {
+    addAccelerationFn: fn ( self: *const Accelerator, xs: []const f64, dotIndex: usize, a_OUT: *[2]f64 ) void,
 
+    pub fn addAcceleration( self: *const Accelerator, xs: []const f64, dotIndex: usize, a_OUT: *[2]f64 ) void {
+        return self.addAccelerationFn( self, xs, dotIndex, a_OUT );
     }
 };
 
-pub fn swapPtrs( comptime T: type, a: *[]T, b: *[]T ) void {
+const ConstantAcceleration = struct {
+    acceleration: [2]f64,
+    accelerator: Accelerator,
+
+    pub fn init( acceleration: [2]f64 ) ConstantAcceleration {
+        return ConstantAcceleration {
+            .acceleration = acceleration,
+            .accelerator = Accelerator {
+                .addAccelerationFn = addAcceleration,
+            },
+        };
+    }
+
+    fn addAcceleration( accelerator: *const Accelerator, xs: []const f64, dotIndex: usize, a_OUT: *[2]f64 ) void {
+        const self = @fieldParentPtr( ConstantAcceleration, "accelerator", accelerator );
+        for ( self.acceleration ) |ai,i| {
+            a_OUT[ i ] += ai;
+        }
+    }
+};
+
+fn swapPtrs( comptime T: type, a: *[]T, b: *[]T ) void {
     const temp = a.ptr;
     a.ptr = b.ptr;
     b.ptr = temp;
 }
 
 fn runSimulation( modelPtr: *?*Model ) !void {
+    // Coords per dot
     comptime const n = 2;
 
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
@@ -254,7 +278,8 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     const coordCount = xsStart.len;
     const vsStart = [ coordCount ]f64 { 7.0,13.0,  2.0,14.0,  5.0,6.0 };
 
-    const accelerator = Accelerator {};
+    var gravity = ConstantAcceleration.init( [_]f64 { 0.0, -9.80665 } );
+    const accelerators = [_]*Accelerator { &gravity.accelerator };
 
     // Pre-compute dots' start indices, for easy iteration later
     const dotCount = @divTrunc( coordCount, n );
@@ -284,7 +309,9 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     for ( dotIndices ) |_,dotIndex| {
         var aCurr = asCurr[ dotIndex*n.. ][ 0..n ];
         aCurr.* = [_]f64 { 0.0 } ** n;
-        accelerator.add( xsCurr, dotIndex, aCurr );
+        for ( accelerators ) |accelerator| {
+            accelerator.addAcceleration( xsCurr, dotIndex, aCurr );
+        }
     }
 
     const frameInterval_MILLIS = 15;
@@ -308,7 +335,9 @@ fn runSimulation( modelPtr: *?*Model ) !void {
         for ( dotIndices ) |_,dotIndex| {
             var aNext = asNext[ dotIndex*n.. ][ 0..n ];
             aNext.* = [_]f64 { 0.0 } ** n;
-            accelerator.add( xsNext, dotIndex, aNext );
+            for ( accelerators ) |accelerator| {
+                accelerator.addAcceleration( xsNext, dotIndex, aNext );
+            }
         }
 
         for ( vsHalf ) |vHalf,coordIndex| {
