@@ -227,16 +227,11 @@ fn onActivate( app_: *GtkApplication, modelPtr_: *?*Model ) callconv(.C) void {
 }
 
 
-
-
-
-
-
 const Accelerator = struct {
-    addAccelerationFn: fn ( self: *const Accelerator, dotIndex: usize, x: [2]f64, a_OUT: *[2]f64 ) void,
+    addAccelerationFn: fn ( self: *const Accelerator, dotIndex: usize, mass: f64, x: [2]f64, aSum_OUT: *[2]f64 ) void,
 
-    pub fn addAcceleration( self: *const Accelerator, dotIndex: usize, x: [2]f64, a_OUT: *[2]f64 ) void {
-        return self.addAccelerationFn( self, dotIndex, x, a_OUT );
+    pub fn addAcceleration( self: *const Accelerator, dotIndex: usize, mass: f64, x: [2]f64, aSum_OUT: *[2]f64 ) void {
+        return self.addAccelerationFn( self, dotIndex, mass, x, aSum_OUT );
     }
 };
 
@@ -253,20 +248,13 @@ const ConstantAcceleration = struct {
         };
     }
 
-    fn addAcceleration( accelerator: *const Accelerator, dotIndex: usize, x: [2]f64, a_OUT: *[2]f64 ) void {
+    fn addAcceleration( accelerator: *const Accelerator, dotIndex: usize, mass: f64, x: [2]f64, aSum_OUT: *[2]f64 ) void {
         const self = @fieldParentPtr( ConstantAcceleration, "accelerator", accelerator );
         for ( self.acceleration ) |ai,i| {
-            a_OUT[ i ] += ai;
+            aSum_OUT[ i ] += ai;
         }
     }
 };
-
-// TODO: Infer T
-fn swapPtrs( comptime T: type, a: *[]T, b: *[]T ) void {
-    const temp = a.ptr;
-    a.ptr = b.ptr;
-    b.ptr = temp;
-}
 
 fn runSimulation( modelPtr: *?*Model ) !void {
     // Coords per dot
@@ -275,8 +263,10 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
     const allocator = &gpa.allocator;
 
-    const xsStart = [_]f64 { -6.0,-3.0, -6.5,-3.0, -6.1,-3.2 };
-    const coordCount = xsStart.len;
+    const dotCount = 3;
+    const coordCount = dotCount * n;
+    const masses = [ dotCount ]f64 { 1.0, 1.0, 1.0 };
+    const xsStart = [ coordCount ]f64 { -6.0,-3.0, -6.5,-3.0, -6.1,-3.2 };
     const vsStart = [ coordCount ]f64 { 7.0,13.0,  2.0,14.0,  5.0,6.0 };
 
     var gravity = ConstantAcceleration.init( [_]f64 { 0.0, -9.80665 } );
@@ -291,7 +281,6 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     gtkzInvokeOnce( &boxUpdater.runnable );
 
     // Pre-compute dots' start indices, for easy iteration later
-    const dotCount = @divTrunc( coordCount, n );
     var dotIndices = [_]usize { undefined } ** dotCount; {
         var dotIndex = @as( usize, 0 );
         while ( dotIndex < dotCount ) : ( dotIndex += 1 ) {
@@ -299,7 +288,8 @@ fn runSimulation( modelPtr: *?*Model ) !void {
         }
     }
 
-    // TODO: Use SIMD Vectors
+    // TODO: Use SIMD Vectors?
+    // TODO: Multi-thread? (If so, avoid false sharing)
 
     const tFull = @as( f64, 200e-9 );
     const tHalf = 0.5*tFull;
@@ -320,7 +310,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
         var aCurr = asCurr[ dotIndex*n.. ][ 0..n ];
         aCurr.* = [_]f64 { 0.0 } ** n;
         for ( accelerators ) |accelerator| {
-            accelerator.addAcceleration( dotIndex, xCurr.*, aCurr );
+            accelerator.addAcceleration( dotIndex, masses[ dotIndex ], xCurr.*, aCurr );
         }
     }
 
@@ -346,7 +336,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
             var aNext = asNext[ dotIndex*n.. ][ 0..n ];
             aNext.* = [_]f64 { 0.0 } ** n;
             for ( accelerators ) |accelerator| {
-                accelerator.addAcceleration( dotIndex, xNext.*, aNext );
+                accelerator.addAcceleration( dotIndex, masses[ dotIndex ], xNext.*, aNext );
             }
         }
         for ( vsHalf ) |vHalf,coordIndex| {
@@ -371,6 +361,8 @@ fn runSimulation( modelPtr: *?*Model ) !void {
             if ( !hasBounce ) {
                 continue;
             }
+
+            const mass = masses[ dotIndex ];
 
             var aNext = asNext[ dotFirstCoordIndex.. ][ 0..n ];
             var vNext = vsNext[ dotFirstCoordIndex.. ][ 0..n ];
@@ -431,7 +423,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                     }
                     aNext_ = [_]f64 { 0.0 } ** n;
                     for ( accelerators ) |accelerator| {
-                        accelerator.addAcceleration( dotIndex, xNext_, &aNext_ );
+                        accelerator.addAcceleration( dotIndex, mass, xNext_, &aNext_ );
                     }
                     for ( vHalf ) |vHalf_i,i| {
                         vNext_[i] = vHalf_i + aNext_[i]*tHalf_;
@@ -456,7 +448,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                     }
                     aNext.* = [_]f64 { 0.0 } ** n;
                     for ( accelerators ) |accelerator| {
-                        accelerator.addAcceleration( dotIndex, xNext.*, aNext );
+                        accelerator.addAcceleration( dotIndex, mass, xNext.*, aNext );
                     }
                     for ( vHalf ) |vHalf_i,i| {
                         vNext[i] = vHalf_i + aNext[i]*tHalf_;
@@ -514,6 +506,13 @@ fn appendBounceTimes( x: f64, v: f64, a: f64, xWall: f64, tsWall_OUT: *Buffer ) 
             tsWall_OUT.append( tWallMinus );
         }
     }
+}
+
+// TODO: Infer T
+fn swapPtrs( comptime T: type, a: *[]T, b: *[]T ) void {
+    const temp = a.ptr;
+    a.ptr = b.ptr;
+    b.ptr = temp;
 }
 
 
