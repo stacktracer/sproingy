@@ -334,14 +334,13 @@ fn runSimulation( modelPtr: *?*Model ) !void {
             nextFrame_PMILLIS = std.time.milliTimestamp( ) + 15;
         }
 
+        // Update dot coords, but without checking for bounces
         for ( vsCurr ) |vCurr,coordIndex| {
             vsHalf[ coordIndex ] = vCurr + asCurr[ coordIndex ]*tHalf;
         }
-
         for ( xsCurr ) |xCurr,coordIndex| {
             xsNext[ coordIndex ] = xCurr + vsHalf[ coordIndex ]*tFull;
         }
-
         for ( dotIndices ) |_,dotIndex| {
             var xNext = xsNext[ dotIndex*n.. ][ 0..n ];
             var aNext = asNext[ dotIndex*n.. ][ 0..n ];
@@ -350,33 +349,39 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                 accelerator.addAcceleration( dotIndex, xNext.*, aNext );
             }
         }
-
         for ( vsHalf ) |vHalf,coordIndex| {
             vsNext[ coordIndex ] = vHalf + asNext[ coordIndex ]*tHalf;
         }
 
+        // Handle bounces
         for ( dotIndices ) |_,dotIndex| {
             // TODO: Profile, speed up
-            // TODO: Dedupe code
+            const dotFirstCoordIndex = dotIndex * n;
+            var xNext = xsNext[ dotFirstCoordIndex.. ][ 0..n ];
 
-            // Inputs
+            // Bail immediately in the common case with no bounce
+            var hasBounce = false;
+            for ( xNext ) |xNext_i,i| {
+                // TODO: Also check stationary point
+                if ( xNext_i <= xMins[i] or xNext_i >= xMaxs[i] ) {
+                    hasBounce = true;
+                    break;
+                }
+            }
+            if ( !hasBounce ) {
+                continue;
+            }
+
+            var aNext = asNext[ dotFirstCoordIndex.. ][ 0..n ];
+            var vNext = vsNext[ dotFirstCoordIndex.. ][ 0..n ];
+            var vHalf = vsHalf[ dotFirstCoordIndex.. ][ 0..n ];
+
             var aCurr = [_]f64 { undefined } ** n;
             var vCurr = [_]f64 { undefined } ** n;
             var xCurr = [_]f64 { undefined } ** n;
-
-            // Initialize inputs for first iteration
-            // TODO: Avoid this copy, since it happens for every dot
-            aCurr = asCurr[ dotIndex*n.. ][ 0..n ].*;
-            vCurr = vsCurr[ dotIndex*n.. ][ 0..n ].*;
-            xCurr = xsCurr[ dotIndex*n.. ][ 0..n ].*;
-
-            // Temp space
-            var vHalf = vsHalf[ dotIndex*n.. ][ 0..n ];
-
-            // Outputs
-            var aNext = asNext[ dotIndex*n.. ][ 0..n ];
-            var vNext = vsNext[ dotIndex*n.. ][ 0..n ];
-            var xNext = xsNext[ dotIndex*n.. ][ 0..n ];
+            aCurr = asCurr[ dotFirstCoordIndex.. ][ 0..n ].*;
+            vCurr = vsCurr[ dotFirstCoordIndex.. ][ 0..n ].*;
+            xCurr = xsCurr[ dotFirstCoordIndex.. ][ 0..n ].*;
 
             while ( true ) {
                 // Time of soonest bounce, and what to multiply each velocity coord by at that time
