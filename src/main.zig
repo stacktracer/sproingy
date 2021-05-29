@@ -379,107 +379,28 @@ fn runSimulation( modelPtr: *?*Model ) !void {
             var xNext = xsNext[ dotIndex*n.. ][ 0..n ];
 
             while ( true ) {
-                // Time of soonest bounce, and what to multiply each velocity coord by
+                // Time of soonest bounce, and what to multiply each velocity coord by at that time
                 var tBounce = std.math.inf( f64 );
-                var vFactor = [_]f64 { 1.0 } ** n;
+                var vBounceFactor = [_]f64 { 1.0 } ** n;
                 for ( xNext ) |xNext_i,i| {
                     // TODO: Also check stationary point
+                    var tsBounce_i_ = [_]f64{ undefined } ** 4;
+                    var tsBounce_i = Buffer.init( &tsBounce_i_ );
                     if ( xNext_i <= xMins[i] ) {
-                        // The t at which we hit the wall, i.e. x[i] - xMin[i] = 0
-                        const A = 0.5*aCurr[i];
-                        const B = vCurr[i];
-                        const C = xCurr[i] - xMins[i];
-                        if ( A == 0.0 ) {
-                            // Bt + C = 0
-                            const tWall_i = -C / B;
-                            if ( 0 <= tWall_i and tWall_i < tFull ) {
-                                if ( tWall_i < tBounce ) {
-                                    tBounce = tWall_i;
-                                    vFactor = [_]f64 { 1.0 } ** n;
-                                    vFactor[i] = -1.0;
-                                }
-                                else if ( tWall_i == tBounce ) {
-                                    vFactor[i] = -1.0;
-                                }
-                            }
-                        }
-                        else {
-                            const D = B*B - 4.0*A*C;
-                            if ( D >= 0.0 ) {
-                                const sqrtD = sqrt( D );
-                                const oneOverTwoA = 0.5 / A;
-                                const tWallPlus_i = ( -B + sqrtD )*oneOverTwoA;
-                                if ( 0 <= tWallPlus_i and tWallPlus_i < tFull ) {
-                                    if ( tWallPlus_i < tBounce ) {
-                                        tBounce = tWallPlus_i;
-                                        vFactor = [_]f64 { 1.0 } ** n;
-                                        vFactor[i] = -1.0;
-                                    }
-                                    else if ( tWallPlus_i == tBounce ) {
-                                        vFactor[i] = -1.0;
-                                    }
-                                }
-                                const tWallMinus_i = ( -B - sqrtD )*oneOverTwoA;
-                                if ( 0 <= tWallMinus_i and tWallMinus_i < tFull ) {
-                                    if ( tWallMinus_i < tBounce ) {
-                                        tBounce = tWallMinus_i;
-                                        vFactor = [_]f64 { 1.0 } ** n;
-                                        vFactor[i] = -1.0;
-                                    }
-                                    else if ( tWallMinus_i == tBounce ) {
-                                        vFactor[i] = -1.0;
-                                    }
-                                }
-                            }
-                        }
+                        appendBounceTimes( xCurr[i], vCurr[i], aCurr[i], xMins[i], &tsBounce_i );
                     }
                     else if ( xNext_i >= xMaxs[i] ) {
-                        // The t at which we hit the wall, i.e. x[i] - xMax[i] = 0
-                        const A = 0.5*aCurr[i];
-                        const B = vCurr[i];
-                        const C = xCurr[i] - xMaxs[i];
-                        if ( A == 0.0 ) {
-                            // Bt + C = 0
-                            const tWall_i = -C / B;
-                            if ( 0 <= tWall_i and tWall_i < tFull ) {
-                                if ( tWall_i < tBounce ) {
-                                    tBounce = tWall_i;
-                                    vFactor = [_]f64 { 1.0 } ** n;
-                                    vFactor[i] = -1.0;
-                                }
-                                else if ( tWall_i == tBounce ) {
-                                    vFactor[i] = -1.0;
-                                }
+                        appendBounceTimes( xCurr[i], vCurr[i], aCurr[i], xMaxs[i], &tsBounce_i );
+                    }
+                    for ( tsBounce_i.items[ 0..tsBounce_i.size ] ) |tBounce_i| {
+                        if ( 0 <= tBounce_i and tBounce_i < tFull ) {
+                            if ( tBounce_i < tBounce ) {
+                                tBounce = tBounce_i;
+                                vBounceFactor = [_]f64 { 1.0 } ** n;
+                                vBounceFactor[i] = -1.0;
                             }
-                        }
-                        else {
-                            // At² + Bt + C = 0
-                            const D = B*B - 4.0*A*C;
-                            if ( D >= 0.0 ) {
-                                const sqrtD = sqrt( D );
-                                const oneOverTwoA = 0.5 / A;
-                                const tWallPlus_i = ( -B + sqrtD )*oneOverTwoA;
-                                if ( 0 <= tWallPlus_i and tWallPlus_i < tFull ) {
-                                    if ( tWallPlus_i < tBounce ) {
-                                        tBounce = tWallPlus_i;
-                                        vFactor = [_]f64 { 1.0 } ** n;
-                                        vFactor[i] = -1.0;
-                                    }
-                                    else if ( tWallPlus_i == tBounce ) {
-                                        vFactor[i] = -1.0;
-                                    }
-                                }
-                                const tWallMinus_i = ( -B - sqrtD )*oneOverTwoA;
-                                if ( 0 <= tWallMinus_i and tWallMinus_i < tFull ) {
-                                    if ( tWallMinus_i < tBounce ) {
-                                        tBounce = tWallMinus_i;
-                                        vFactor = [_]f64 { 1.0 } ** n;
-                                        vFactor[i] = -1.0;
-                                    }
-                                    else if ( tWallMinus_i == tBounce ) {
-                                        vFactor[i] = -1.0;
-                                    }
-                                }
+                            else if ( tBounce_i == tBounce ) {
+                                vBounceFactor[i] = -1.0;
                             }
                         }
                     }
@@ -513,7 +434,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
 
                     aCurr = aNext_;
                     for ( vNext_ ) |vNext_i,i| {
-                        vCurr[i] = vFactor[i] * vNext_i;
+                        vCurr[i] = vBounceFactor[i] * vNext_i;
                     }
                     xCurr = xNext_;
                 }
@@ -546,10 +467,49 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     }
 }
 
+const Buffer = struct {
+    items: []f64,
+    size: usize,
 
+    pub fn init( items: []f64 ) Buffer {
+        return Buffer {
+            .items = items,
+            .size = 0,
+        };
+    }
 
+    pub fn append( self: *Buffer, item: f64 ) void {
+        if ( self.size < 0 or self.size >= self.items.len ) {
+            std.debug.panic( "Failed to append to buffer: capacity = {d}, size = {d}", .{ self.items.len, self.size } );
+        }
+        self.items[ self.size ] = item;
+        self.size += 1;
+    }
+};
 
-
+/// May append up to 2 values to tsWall_OUT.
+fn appendBounceTimes( x: f64, v: f64, a: f64, xWall: f64, tsWall_OUT: *Buffer ) void {
+    const A = 0.5*a;
+    const B = v;
+    const C = x - xWall;
+    if ( A == 0.0 ) {
+        // Bt + C = 0
+        const tWall = -C / B;
+        tsWall_OUT.append( tWall );
+    }
+    else {
+        // At² + Bt + C = 0
+        const D = B*B - 4.0*A*C;
+        if ( D >= 0.0 ) {
+            const sqrtD = sqrt( D );
+            const oneOverTwoA = 0.5 / A;
+            const tWallPlus = ( -B + sqrtD )*oneOverTwoA;
+            const tWallMinus = ( -B - sqrtD )*oneOverTwoA;
+            tsWall_OUT.append( tWallPlus );
+            tsWall_OUT.append( tWallMinus );
+        }
+    }
+}
 
 
 
