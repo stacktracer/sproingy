@@ -256,6 +256,55 @@ const ConstantAcceleration = struct {
     }
 };
 
+const SpringsAcceleration = struct {
+    restLength: f64,
+    stiffness: f64,
+    allDotCoords: *[]f64,
+    accelerator: Accelerator,
+
+    pub fn init( restLength: f64, stiffness: f64, allDotCoords: *[]f64 ) SpringsAcceleration {
+        return SpringsAcceleration {
+            .restLength = restLength,
+            .stiffness = stiffness,
+            .allDotCoords = allDotCoords,
+            .accelerator = Accelerator {
+                .addAccelerationFn = addAcceleration,
+            },
+        };
+    }
+
+    fn addAcceleration( accelerator: *const Accelerator, dotIndex: usize, mass: f64, x: [2]f64, aSum_OUT: *[2]f64 ) void {
+        const self = @fieldParentPtr( SpringsAcceleration, "accelerator", accelerator );
+        const c1 = self.stiffness / mass;
+
+        const dotFirstCoordIndex = dotIndex * 2;
+
+        const allDotCoords = self.allDotCoords.*;
+        var otherFirstCoordIndex = @as( usize, 0 );
+        while ( otherFirstCoordIndex < allDotCoords.len ) : ( otherFirstCoordIndex += 2 ) {
+            if ( otherFirstCoordIndex != dotFirstCoordIndex ) {
+                const xOther = allDotCoords[ otherFirstCoordIndex.. ][ 0..2 ].*;
+
+                var ds = [_]f64 { undefined } ** 2;
+                var dSquared = @as( f64, 0.0 );
+                for ( xOther ) |xOther_i,i| {
+                    const di = xOther_i - x[i];
+                    ds[i] = di;
+                    dSquared += di*di;
+                }
+                const d = sqrt( dSquared );
+
+                const offsetFromRest = d - self.restLength;
+                const c2 = c1 * offsetFromRest / d;
+                for ( ds ) |di,i| {
+                    // a = ( stiffness * offsetFromRest * di/d ) / mass
+                    aSum_OUT[i] += c2 * di;
+                }
+            }
+        }
+    }
+};
+
 fn runSimulation( modelPtr: *?*Model ) !void {
     // Coords per dot
     comptime const n = 2;
@@ -269,9 +318,6 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     const xsStart = [ coordCount ]f64 { -6.0,-3.0, -6.5,-3.0, -6.1,-3.2 };
     const vsStart = [ coordCount ]f64 { 7.0,13.0,  2.0,14.0,  5.0,6.0 };
 
-    var gravity = ConstantAcceleration.init( [_]f64 { 0.0, -9.80665 } );
-    const accelerators = [_]*Accelerator { &gravity.accelerator };
-
     const xMins = [n]f64 { -8.0, -6.0 };
     const xMaxs = [n]f64 {  8.0,  6.0 };
 
@@ -280,11 +326,11 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     var boxUpdater = try BoxUpdater.createAndInit( allocator, modelPtr, &boxCoords );
     gtkzInvokeOnce( &boxUpdater.runnable );
 
-    // Pre-compute dots' start indices, for easy iteration later
-    var dotIndices = [_]usize { undefined } ** dotCount; {
+    // Pre-compute the first coord index of each dot, for easy iteration later
+    var dotFirstCoordIndices = [_]usize { undefined } ** dotCount; {
         var dotIndex = @as( usize, 0 );
         while ( dotIndex < dotCount ) : ( dotIndex += 1 ) {
-            dotIndices[ dotIndex ] = dotIndex;
+            dotFirstCoordIndices[ dotIndex ] = dotIndex * n;
         }
     }
 
@@ -303,11 +349,15 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     var asCurr = @as( []f64, &coordArrays[5] );
     var asNext = @as( []f64, &coordArrays[6] );
 
+    var gravity = ConstantAcceleration.init( [_]f64 { 0.0, -9.80665 } );
+    var springs = SpringsAcceleration.init( 0.6, 300.0, &xsCurr );
+    const accelerators = [_]*Accelerator { &gravity.accelerator, &springs.accelerator };
+
     xsCurr[ 0..coordCount ].* = xsStart;
     vsCurr[ 0..coordCount ].* = vsStart;
-    for ( dotIndices ) |_,dotIndex| {
-        const xCurr = xsCurr[ dotIndex*n.. ][ 0..n ];
-        var aCurr = asCurr[ dotIndex*n.. ][ 0..n ];
+    for ( dotFirstCoordIndices ) |dotFirstCoordIndex,dotIndex| {
+        const xCurr = xsCurr[ dotFirstCoordIndex.. ][ 0..n ];
+        var aCurr = asCurr[ dotFirstCoordIndex.. ][ 0..n ];
         aCurr.* = [_]f64 { 0.0 } ** n;
         for ( accelerators ) |accelerator| {
             accelerator.addAcceleration( dotIndex, masses[ dotIndex ], xCurr.*, aCurr );
@@ -331,9 +381,9 @@ fn runSimulation( modelPtr: *?*Model ) !void {
         for ( xsCurr ) |xCurr,coordIndex| {
             xsNext[ coordIndex ] = xCurr + vsHalf[ coordIndex ]*tFull;
         }
-        for ( dotIndices ) |_,dotIndex| {
-            var xNext = xsNext[ dotIndex*n.. ][ 0..n ];
-            var aNext = asNext[ dotIndex*n.. ][ 0..n ];
+        for ( dotFirstCoordIndices ) |dotFirstCoordIndex,dotIndex| {
+            var xNext = xsNext[ dotFirstCoordIndex.. ][ 0..n ];
+            var aNext = asNext[ dotFirstCoordIndex.. ][ 0..n ];
             aNext.* = [_]f64 { 0.0 } ** n;
             for ( accelerators ) |accelerator| {
                 accelerator.addAcceleration( dotIndex, masses[ dotIndex ], xNext.*, aNext );
@@ -344,9 +394,8 @@ fn runSimulation( modelPtr: *?*Model ) !void {
         }
 
         // Handle bounces
-        for ( dotIndices ) |_,dotIndex| {
+        for ( dotFirstCoordIndices ) |dotFirstCoordIndex,dotIndex| {
             // TODO: Profile, speed up
-            const dotFirstCoordIndex = dotIndex * n;
             var xNext = xsNext[ dotFirstCoordIndex.. ][ 0..n ];
 
             // Bail immediately in the common case with no bounce
