@@ -364,6 +364,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
         }
     }
 
+    // TODO: Exit condition?
     const frameInterval_MILLIS = 15;
     var nextFrame_PMILLIS = @as( i64, std.math.minInt( i64 ) );
     while ( true ) {
@@ -401,10 +402,21 @@ fn runSimulation( modelPtr: *?*Model ) !void {
             // Bail immediately in the common case with no bounce
             var hasBounce = false;
             for ( xNext ) |xNext_i,i| {
-                // TODO: Also check stationary point
                 if ( xNext_i <= xMins[i] or xNext_i >= xMaxs[i] ) {
                     hasBounce = true;
                     break;
+                }
+
+                const aCurr_i = asCurr[ dotFirstCoordIndex + i ];
+                const vCurr_i = vsCurr[ dotFirstCoordIndex + i ];
+                const tTip_i = vCurr_i / ( -2.0 * aCurr_i );
+                if ( 0 <= tTip_i and tTip_i < tFull ) {
+                    const xCurr_i = xsCurr[ dotFirstCoordIndex + i ];
+                    const xTip_i = xCurr_i + vCurr_i*tTip_i + 0.5*aCurr_i*tTip_i*tTip_i;
+                    if ( xTip_i <= xMins[i] or xTip_i >= xMaxs[i] ) {
+                        hasBounce = true;
+                        break;
+                    }
                 }
             }
             if ( !hasBounce ) {
@@ -429,13 +441,33 @@ fn runSimulation( modelPtr: *?*Model ) !void {
                 var tBounce = std.math.inf( f64 );
                 var vBounceFactor = [_]f64 { 1.0 } ** n;
                 for ( xNext ) |xNext_i,i| {
-                    // TODO: Also check stationary point
-                    var tsBounce_i_ = [_]f64{ undefined } ** 4;
-                    var tsBounce_i = Buffer.init( &tsBounce_i_ );
+                    var hasMinBounce = false;
+                    var hasMaxBounce = false;
+
                     if ( xNext_i <= xMins[i] ) {
-                        appendBounceTimes( xCurr[i], vCurr[i], aCurr[i], xMins[i], &tsBounce_i );
+                        hasMinBounce = true;
                     }
                     else if ( xNext_i >= xMaxs[i] ) {
+                        hasMaxBounce = true;
+                    }
+
+                    const tTip_i = vCurr[i] / ( -2.0 * aCurr[i] );
+                    if ( 0 <= tTip_i and tTip_i < tFull ) {
+                        const xTip_i = xCurr[i] + vCurr[i]*tTip_i + 0.5*aCurr[i]*tTip_i*tTip_i;
+                        if ( xTip_i <= xMins[i] ) {
+                            hasMinBounce = true;
+                        }
+                        else if ( xTip_i >= xMaxs[i] ) {
+                            hasMaxBounce = true;
+                        }
+                    }
+
+                    var tsBounce_i_ = [_]f64{ undefined } ** 4;
+                    var tsBounce_i = Buffer.init( &tsBounce_i_ );
+                    if ( hasMinBounce ) {
+                        appendBounceTimes( xCurr[i], vCurr[i], aCurr[i], xMins[i], &tsBounce_i );
+                    }
+                    if ( hasMaxBounce ) {
                         appendBounceTimes( xCurr[i], vCurr[i], aCurr[i], xMaxs[i], &tsBounce_i );
                     }
                     for ( tsBounce_i.items[ 0..tsBounce_i.size ] ) |tBounce_i| {
@@ -562,232 +594,6 @@ fn swapPtrs( comptime T: type, a: *[]T, b: *[]T ) void {
     const temp = a.ptr;
     a.ptr = b.ptr;
     b.ptr = temp;
-}
-
-
-
-
-
-
-fn runSimulation_OLD( modelPtr: *?*Model ) !void {
-    var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
-    const allocator = &gpa.allocator;
-
-    const tStart = 0.0;
-    const xsStart = [_]f64 { -6.0,-3.0, -6.5,-3.0, -6.1,-3.2 };
-    const coordCount = xsStart.len;
-    const vsStart = [ coordCount ]f64 { 7.0,13.0,  2.0,14.0,  5.0,6.0 };
-
-    const aConstant = [2]f64 { 0.0, -9.80665 };
-    const xMins = [2]f64 { -8.0, -6.0 };
-    const xMaxs = [2]f64 {  8.0,  6.0 };
-
-    const springStiffness = 300.0;
-    const springRestLength = 0.6;
-    const dotMass = 10.0;
-    const dotMassRecip = 1.0 / dotMass;
-
-    // Send box coords to the UI
-    var boxCoords = [_]f64 { xMins[0],xMaxs[1], xMins[0],xMins[1], xMaxs[0],xMaxs[1], xMaxs[0],xMins[1] };
-    var boxUpdater = try BoxUpdater.createAndInit( allocator, modelPtr, &boxCoords );
-    gtkzInvokeOnce( &boxUpdater.runnable );
-
-    // Pre-compute dots' start indices, for easy iteration later
-    const dotCount = @divTrunc( coordCount, 2 );
-    var dotIndices = range( 0, dotCount, 1 );
-    var dotFirstCoordIndices = try allocator.alloc( usize, dotCount );
-    while ( dotIndices.next( ) ) |dotIndex| {
-        dotFirstCoordIndices[ dotIndex ] = 2 * dotIndex;
-    }
-
-    // Previous
-    var tPrev = @as( f64, tStart - 2e-7 );
-    var xsPrev = try allocator.alloc( f64, coordCount );
-    {
-        const dt = tStart - tPrev;
-        const dtSquared = dt*dt;
-
-        for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
-            const xB = xsStart[ dotFirstCoordIndex.. ][ 0..2 ].*;
-            const vB = vsStart[ dotFirstCoordIndex.. ][ 0..2 ].*;
-            var aB = aConstant; // FIXME: Compute full acceleration at xB
-
-            var xA: [2]f64 = undefined;
-            for ( xB ) |xBi,i| {
-                // Don't know vA/aA, but vB/aB are good enough for init
-                xA[i] = xBi - vB[i]*dt - aB[i]*dtSquared;
-            }
-            xsPrev[ dotFirstCoordIndex.. ][ 0..2 ].* = xA;
-        }
-    }
-
-    // Current
-    var tCurr = @as( f64, tStart );
-    var xsCurr = try allocator.alloc( f64, coordCount );
-    xsCurr[ 0..coordCount ].* = xsStart;
-
-    // Next
-    var xsNext = try allocator.alloc( f64, coordCount );
-
-    // TODO: Exit condition?
-    while ( true ) {
-        // Send current dot coords to the UI
-        var dotsUpdater = try DotsUpdater.createAndInit( allocator, modelPtr, xsCurr );
-        gtkzInvokeOnce( &dotsUpdater.runnable );
-
-        // Compute new dot positions
-        var timeIndices = range( 0, 1000, 1 );
-        while ( timeIndices.next( ) ) |_| {
-            // TODO: Dynamic timestep?
-            const tNext = tCurr + 2e-7;
-            const dt = tNext - tCurr;
-            const dtPrev = tCurr - tPrev;
-            const dtRatio = dt / dtPrev;
-            const dtSquared = dt * dt;
-
-            // TODO: Multi-thread; avoid false sharing of xsNext
-            for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
-                const xA = xsPrev[ dotFirstCoordIndex.. ][ 0..2 ].*;
-                const xB = xsCurr[ dotFirstCoordIndex.. ][ 0..2 ].*;
-
-                var aB = aConstant;
-                for ( dotFirstCoordIndices ) |dotFirstCoordIndex2| {
-                    if ( dotFirstCoordIndex2 != dotFirstCoordIndex ) {
-                        const xB2 = xsCurr[ dotFirstCoordIndex2.. ][ 0..2 ].*;
-
-                        var ds: [2]f64 = undefined;
-                        var dSquared = @as( f64, 0.0 );
-                        for ( xB2 ) |xB2i,i| {
-                            const di = xB2i - xB[i];
-                            ds[i] = di;
-                            dSquared += di * di;
-                        }
-                        const d = sqrt( dSquared );
-
-                        const offset = d - springRestLength;
-                        const dRecip = 1.0 / d;
-                        for ( ds ) |di,i| {
-                            const fi = springStiffness * offset * di*dRecip;
-                            aB[i] += fi * dotMassRecip;
-                        }
-                    }
-                }
-
-                var xC: [2]f64 = undefined;
-                for ( xB ) |xBi,i| {
-                    xC[i] = xBi + ( xBi - xA[i] )*dtRatio + aB[i]*dtSquared;
-                }
-
-                for ( xC ) |xCi,i| {
-                    const vBi = ( xB[i] - xA[i] ) / dtPrev;
-
-                    if ( xCi <= xMins[i] ) {
-                        // The dt at which we hit the wall, i.e. x[i] - xMin[i] = 0
-                        const A = aB[i];
-                        const B = vBi;
-                        const C = xB[i] - xMins[i];
-                        const D = B*B - 4.0*A*C;
-                        if ( D >= 0.0 ) {
-                            const sqrtD = sqrt( D );
-                            const oneOverTwoA = 0.5 / A;
-                            const dtWiPlus = ( -B + sqrtD )*oneOverTwoA;
-                            if ( 0 <= dtWiPlus and dtWiPlus < dt ) {
-                                const xWiPlus = xB[i] + vBi*dtWiPlus + aB[i]*dtWiPlus*dtWiPlus;
-                                std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns,  xWiPlus = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtWiPlus*1e9, xWiPlus } );
-                            }
-                            const dtWiMinus = ( -B - sqrtD )*oneOverTwoA;
-                            if ( 0 <= dtWiMinus and dtWiMinus < dt ) {
-                                const xWiMinus = xB[i] + vBi*dtWiMinus + aB[i]*dtWiMinus*dtWiMinus;
-                                std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns, xWiMinus = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtWiMinus*1e9, xWiMinus } );
-                            }
-                        }
-                    }
-                    else if ( xCi >= xMaxs[i] ) {
-                        // The dt at which we hit the wall, i.e. x[i] - xMax[i] = 0
-                        const A = aB[i];
-                        const B = vBi;
-                        const C = xB[i] - xMaxs[i];
-                        const D = B*B - 4.0*A*C;
-                        if ( D >= 0.0 ) {
-                            const sqrtD = sqrt( D );
-                            const oneOverTwoA = 0.5 / A;
-                            const dtWiPlus = ( -B + sqrtD )*oneOverTwoA;
-                            if ( 0 <= dtWiPlus and dtWiPlus < dt ) {
-                                const xWiPlus = xB[i] + vBi*dtWiPlus + aB[i]*dtWiPlus*dtWiPlus;
-                                std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns,  xWiPlus = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtWiPlus*1e9, xWiPlus } );
-                            }
-                            const dtWiMinus = ( -B - sqrtD )*oneOverTwoA;
-                            if ( 0 <= dtWiMinus and dtWiMinus < dt ) {
-                                const xWiMinus = xB[i] + vBi*dtWiMinus + aB[i]*dtWiMinus*dtWiMinus;
-                                std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns, xWiMinus = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtWiMinus*1e9, xWiMinus } );
-                            }
-                        }
-                    }
-
-                    // The dt at which x[i] is stationary, i.e. d(xi)/d(dt) = 0
-                    const dtSi = vBi / ( -2.0 * aB[i] );
-                    if ( 0 <= dtSi and dtSi < dt ) {
-                        const xSi = xB[i] + vBi*dtSi + aB[i]*dtSi*dtSi;
-                        if ( xSi <= xMins[i] ) {
-                            std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns, xSi = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtSi*1e9, xSi } );
-                        }
-                        else if ( xSi >= xMaxs[i] ) {
-                            std.debug.print( "dot = {}, i = {}, dt = {d:7.3} ns, xSi = {d}\n", .{ @divTrunc( dotFirstCoordIndex, 2 ), i, dtSi*1e9, xSi } );
-                        }
-                    }
-                }
-
-
-                // FIXME: Bounce here, accelerating properly on each segment
-                //
-                // Assume we start the timestep NOT in a wall. Check whether
-                // we're in a wall at the end of the timestep. Also, find the
-                // time at which the derivative of the parabola is zero, and
-                // if that time is before the end of the timestep, then check
-                // whether we're in a wall at that time. These checks should
-                // both be computationally cheap -- the expensive part will
-                // be handling dots that have hit a wall, but we'll assume
-                // there won't be many of those on a given timestep.
-                //
-                // Quadratic formula should be enough to find the intersection
-                // of the path with the wall.
-                //
-                // This will require keeping an unmodified copy of xsCurr, for
-                // computing the forces that apply on the current timestep,
-                // and also a munged copy of xsCurr, to be used as xsPrev on
-                // the next timestep. Maybe it's time to read up on "velocity
-                // verlet."
-
-                xsNext[ dotFirstCoordIndex.. ][ 0..2 ].* = xC;
-            }
-
-            // FIXME: Reflect off walls -- assumes acceleration is symmetric about the wall, which generally isn't true
-            // NOTE: This may modify xCurr!
-            for ( dotFirstCoordIndices ) |dotFirstCoordIndex| {
-                const xC = xsNext[ dotFirstCoordIndex.. ][ 0..2 ].*;
-                for ( xC ) |xCi,i| {
-                    if ( xCi <= xMins[i] ) {
-                        xsCurr[ dotFirstCoordIndex + i ] = 2.0*xMins[i] - xsCurr[ dotFirstCoordIndex + i ];
-                        xsNext[ dotFirstCoordIndex + i ] = 2.0*xMins[i] - xCi;
-                    }
-                    else if ( xCi >= xMaxs[i] ) {
-                        xsCurr[ dotFirstCoordIndex + i ] = 2.0*xMaxs[i] - xsCurr[ dotFirstCoordIndex + i ];
-                        xsNext[ dotFirstCoordIndex + i ] = 2.0*xMaxs[i] - xCi;
-                    }
-                }
-            }
-
-            // Rotate times
-            tPrev = tCurr;
-            tCurr = tNext;
-
-            // Rotate position slices, recycling the oldest
-            const xsPtrTemp = xsPrev.ptr;
-            xsPrev.ptr = xsCurr.ptr;
-            xsCurr.ptr = xsNext.ptr;
-            xsNext.ptr = xsPtrTemp;
-        }
-    }
 }
 
 const BoxUpdater = struct {

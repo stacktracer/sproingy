@@ -10,28 +10,6 @@ pub const Runnable = struct {
     }
 };
 
-pub fn range( start: usize, stop: usize, step: usize ) RangeIterator {
-    return RangeIterator {
-        .curr = start,
-        .step = step,
-        .stop = stop,
-    };
-}
-
-const RangeIterator = struct {
-    curr: usize,
-    step: usize,
-    stop: usize,
-
-    pub fn next( self: *RangeIterator ) ?usize {
-        if ( self.curr < self.stop ) {
-            defer self.curr += self.step;
-            return self.curr;
-        }
-        return null;
-    }
-};
-
 pub const Vec2 = struct {
     x: f64,
     y: f64,
