@@ -291,7 +291,7 @@ fn runSimulation( modelPtr: *?*Model ) !void {
     // TODO: Use SIMD Vectors?
     // TODO: Multi-thread? (If so, avoid false sharing)
 
-    const tFull = @as( f64, 200e-9 );
+    const tFull = @as( f64, 500e-9 );
     const tHalf = 0.5*tFull;
 
     var coordArrays: [7][coordCount]f64 = undefined;
