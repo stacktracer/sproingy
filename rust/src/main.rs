@@ -39,6 +39,8 @@ trait Dragger {
     fn handleRelease( &mut self, mouse_PX: (f64,f64) );
 }
 
+
+
 struct Model {
     draggers: Vec<Rc<RefCell<dyn Dragger>>>,
     activeDragger: RefCell<Option<Rc<RefCell<dyn Dragger>>>>,
@@ -97,6 +99,8 @@ fn lpxToPx( widget: &impl WidgetExt, xy_LPX: (f64,f64) ) -> (f64,f64) {
     ( scale*xy_LPX.0 + 0.5, scale*xy_LPX.1 + 0.5 )
 }
 
+
+
 fn main( ) {
     glInit( );
     gtk::init( ).unwrap( );
@@ -126,7 +130,7 @@ fn main( ) {
     } );
 
     glArea.connect_button_press_event( clone!(
-        @weak model => @default-panic,
+        @strong model =>
         move |glArea, ev| {
             if ev.get_button( ) == 1 {
                 let mouse_PX = lpxToPx( glArea, ev.get_position( ) );
@@ -145,7 +149,7 @@ fn main( ) {
     ) );
 
     glArea.connect_motion_notify_event( clone!(
-        @weak model => @default-panic,
+        @strong model =>
         move |glArea, ev| {
             if let Some( dragger ) = &*model.activeDragger.borrow( ) {
                 let mouse_PX = lpxToPx( glArea, ev.get_position( ) );
@@ -156,7 +160,7 @@ fn main( ) {
     ) );
 
     glArea.connect_button_release_event( clone!(
-        @weak model => @default-panic,
+        @strong model =>
         move |glArea, ev| {
             if let Some( dragger ) = &*model.activeDragger.borrow( ) {
                 let mouse_PX = lpxToPx( glArea, ev.get_position( ) );
@@ -168,7 +172,7 @@ fn main( ) {
     ) );
 
     glArea.connect_key_press_event( clone!(
-        @weak window => @default-panic,
+        @strong window =>
         move |_, ev| {
             match ev.get_keyval( ) {
                 Escape => window.close( ),
