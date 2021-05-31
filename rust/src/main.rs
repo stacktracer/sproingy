@@ -9,9 +9,8 @@ extern crate gdk;
 extern crate glib;
 
 use std::ptr;
-use std::rc::{ Rc, Weak };
+use std::rc::Rc;
 use std::cell::RefCell;
-use std::ops::DerefMut;
 use gtk::prelude::*;
 use gtk::{ Window, WindowType, WidgetExt, GLArea };
 use gdk::EventMask;
@@ -114,7 +113,7 @@ fn main( ) {
     let axis = Rc::new( RefCell::new( Axis2::new( ( 0.0, 0.0, 480.0, 360.0 ) ) ) );
 
     let model = Rc::new( Model {
-        draggers: vec! [ axis.clone( ) ],
+        draggers: vec![ axis.clone( ) ],
         activeDragger: RefCell::new( None ),
     } );
 
@@ -143,7 +142,7 @@ fn main( ) {
             }
             Inhibit( true )
         }
-     ) );
+    ) );
 
     glArea.connect_motion_notify_event( clone!(
         @weak model => @default-panic,
