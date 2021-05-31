@@ -1,3 +1,4 @@
 /include
 zig-cache
+target
 *.code-workspace
