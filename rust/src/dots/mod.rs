@@ -7,46 +7,109 @@ use std::str;
 use std::rc::Rc;
 use std::ffi::CString;
 use std::error::Error;
+use std::mem::{ MaybeUninit, size_of };
 use simple_error::bail;
-
 use gl::types::*;
+use crate::axis::*;
 
-pub struct Dots {
-    // axis: Rc<[Axis; 2]>
-
-    // size_LPX: f64,
-    // rgba: [gl::GLfloat; 4],
-    // coords: ,
-    // coordsModified: bool,
-
-    // FIXME: Maybe an Option<DeviceResources> field?
-
-    prog: Program,
+pub struct RenderContext {
+    viewport_PX: [Interval; 2],
+    lpxToPx: f64,
 }
 
+pub struct Dots {
+    axis: Rc<[Axis; 2]>,
+
+    size_LPX: f64,
+    rgba: [GLfloat; 4],
+    // coords: ,
+    coordsModified: bool,
+
+    // FIXME: Maybe an Option<DeviceResources> field?
+    prog: Program,
+    vbo: GLuint,
+    vCount: GLsizei,
+    vao: GLuint,
+}
 
 impl Dots {
-    // FIXME
-    // pub fn new( axis: Rc<[Axis; 2]> ) -> Dots {
-    //     Dots {
-    //         axis,
-    //         size_LPX: 15,
-    //         rgba:
-    //     }
-    // }
+    pub fn new( axis: Rc<[Axis; 2]> ) -> Dots {
+        Dots {
+            axis,
+            size_LPX: 15.0,
+            rgba: [ 1.0, 0.0, 0.0, 1.0 ],
+            coords: ,
+            coordsModified: true,
+        }
+    }
 
-    pub fn glInit( &mut self ) -> Result<(), Box<dyn Error>> {
+    pub fn glInit( &mut self, context: &RenderContext ) -> Result<(), Box<dyn Error>> {
         self.prog = Program::new( )?;
+
+        gl::GenBuffers( 1, &mut self.vbo );
+        gl::BindBuffer( gl::ARRAY_BUFFER, self.vbo );
+
+        gl::GenVertexArrays( 1, &mut self.vao );
+        gl::BindVertexArray( self.vao );
+        gl::EnableVertexAttribArray( self.prog.inCoords );
+        gl::VertexAttribPointer( self.prog.inCoords, 2, gl::FLOAT, gl::FALSE, 0, ptr::null( ) );
+
         Ok(())
     }
 
-    pub fn glRender( ) {
-        // FIXME
+    pub fn glRender( &mut self, context: &RenderContext ) {
+        if self.coordsModified {
+            self.vCount = ( self.coords.items.len / 2 ) as GLsizei;
+            if self.vCount > 0 {
+                gl::BufferData( gl::ARRAY_BUFFER, 2*self.vCount*size_of::<GLfloat>( ), @ptrCast( *const c_void, self.coords.items.ptr ), gl::STATIC_DRAW );
+            }
+            self.coordsModified = false;
+        }
+
+        if self.vCount > 0 {
+            let bounds = mapArray( &self.axis, &Axis::bounds );
+            let size_PX = ( self.size_LPX * context.lpxToPx ) as f32;
+
+            gl::BlendEquation( gl::FUNC_ADD );
+            gl::BlendFunc( gl::ONE, gl::ONE_MINUS_SRC_ALPHA );
+            gl::Enable( gl::BLEND );
+
+            gl::Enable( gl::VERTEX_PROGRAM_POINT_SIZE );
+            gl::UseProgram( self.prog.program );
+            uniformInterval2( self.prog.XY_BOUNDS, bounds );
+            gl::Uniform1f( self.prog.SIZE_PX, size_PX );
+            gl::Uniform4fv( self.prog.RGBA, 1, self.rgba.as_ptr( ) );
+
+            gl::BindVertexArray( self.vao );
+            gl::DrawArrays( gl::POINTS, 0, self.vCount );
+        }
+    }
+
+    pub fn glDeinit( &mut self, context: &RenderContext ) {
+        gl::DeleteProgram( self.prog.program );
+        gl::DeleteVertexArrays( 1, &self.vao );
+        gl::DeleteBuffers( 1, &self.vbo );
     }
 }
 
+pub fn mapArray<A, B, F: Fn(&A)->B, const N: usize>( array: &[A; N], f: F ) -> [B; N] {
+    let mut result: [B; N] = unsafe { MaybeUninit::uninit( ).assume_init( ) };
+    for i in 0..N {
+        result[i] = f( &array[i] );
+    }
+    result
+}
+
+pub fn uniformInterval2( location: GLint, interval2: [Interval; 2] ) {
+    gl::Uniform4f( location,
+                   interval2[0].min as GLfloat,
+                   interval2[1].min as GLfloat,
+                   interval2[0].span as GLfloat,
+                   interval2[1].span as GLfloat );
+}
+
 struct Program {
-    prog: GLuint,
+    program: GLuint,
 
     XY_BOUNDS: GLint,
     SIZE_PX: GLint,
@@ -60,13 +123,13 @@ impl Program {
         unsafe {
             let vertSource = include_str!( "shader.vert" );
             let fragSource = include_str!( "shader.frag" );
-            let prog = createProgram( vertSource, fragSource )?;
+            let program = createProgram( vertSource, fragSource )?;
             Ok( Program {
-                prog,
-                XY_BOUNDS: getUniformLoc( prog, "XY_BOUNDS" )?,
-                SIZE_PX: getUniformLoc( prog, "SIZE_PX" )?,
-                RGBA: getUniformLoc( prog, "RGBA" )?,
-                inCoords: getAttribLoc( prog, "inCoords" )?,
+                program,
+                XY_BOUNDS: getUniformLoc( program, "XY_BOUNDS" )?,
+                SIZE_PX: getUniformLoc( program, "SIZE_PX" )?,
+                RGBA: getUniformLoc( program, "RGBA" )?,
+                inCoords: getAttribLoc( program, "inCoords" )?,
             } )
         }
     }
