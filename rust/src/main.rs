@@ -18,6 +18,8 @@ use gdk::keys::constants::{ Escape };
 use glib::clone;
 use shared_library::dynamic_library::DynamicLibrary;
 
+
+
 fn glInit( ) {
     epoxy::load_with( |s| {
         unsafe {
@@ -30,13 +32,122 @@ fn glInit( ) {
     gl::load_with( epoxy::get_proc_addr );
 }
 
+fn lpxToPx( widget: &impl WidgetExt, xy_LPX: (f64,f64) ) -> [f64; 2] {
+    let scale = widget.get_scale_factor( ) as f64;
+    [ scale*xy_LPX.0 + 0.5, scale*xy_LPX.1 + 0.5 ]
+}
 
 
-trait Dragger {
-    fn canHandlePress( &self, mouse_PX: (f64,f64) ) -> bool;
-    fn handlePress( &mut self, mouse_PX: (f64,f64) );
-    fn handleDrag( &mut self, mouse_PX: (f64,f64) );
-    fn handleRelease( &mut self, mouse_PX: (f64,f64) );
+
+pub trait Dragger {
+    fn canHandlePress( &self, mouse_PX: [f64; 2] ) -> bool;
+    fn handlePress( &mut self, mouse_PX: [f64; 2] );
+    fn handleDrag( &mut self, mouse_PX: [f64; 2] );
+    fn handleRelease( &mut self, mouse_PX: [f64; 2] );
+}
+
+
+
+pub struct Interval {
+    /// Inclusive lower bound.
+    min: f64,
+
+    /// Difference between min and exclusive upper bound.
+    span: f64,
+}
+
+impl Interval {
+    pub fn new( min: f64, span: f64 ) -> Interval {
+        Interval { min, span }
+    }
+
+    pub fn withMinMax( min: f64, max: f64 ) -> Interval {
+        Interval::new( min, max - min )
+    }
+
+    pub fn valueToFrac( &self, value: f64 ) -> f64 {
+        ( value - self.min ) / self.span
+    }
+
+    pub fn fracToValue( &self, frac: f64 ) -> f64 {
+        self.min + frac*self.span
+    }
+}
+
+pub struct Axis {
+    viewport_PX: Interval,
+    tieFrac: f64,
+    tieCoord: f64,
+    scale: f64,
+    grabCoord: f64,
+}
+
+impl Axis {
+    pub fn new( viewport_PX: Interval ) -> Axis {
+        Axis {
+            scale: viewport_PX.span / 10.0,
+            viewport_PX,
+            tieFrac: 0.5,
+            tieCoord: 0.0,
+            grabCoord: 0.0,
+        }
+    }
+
+    pub fn withSize_PX( viewportSize_PX: f64 ) -> Axis {
+        Axis::new( Interval::new( 0.0, viewportSize_PX ) )
+    }
+
+    pub fn bounds( &self ) -> Interval {
+        let span = self.viewport_PX.span / self.scale;
+        let min = self.tieCoord - self.tieFrac*span;
+        Interval { min, span }
+    }
+
+    pub fn pxToFrac( &self, px: f64 ) -> f64 {
+        self.viewport_PX.valueToFrac( px )
+    }
+
+    pub fn pxToCoord( &self, px: f64 ) -> f64 {
+        self.bounds( ).fracToValue( self.pxToFrac( px ) )
+    }
+
+    pub fn set( &mut self, frac: f64, coord: f64, scale: f64 ) {
+        let span = self.viewport_PX.span / scale;
+        self.tieCoord = coord + ( self.tieFrac - frac )*span;
+        self.scale = scale;
+    }
+}
+
+impl Dragger for [Axis; 2] {
+    fn canHandlePress( &self, mouse_PX: [f64; 2] ) -> bool {
+        for i in 0..2 {
+            let mouse_FRAC = self[i].pxToFrac( mouse_PX[i] );
+            if mouse_FRAC < 0.0 || mouse_FRAC > 1.0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn handlePress( &mut self, mouse_PX: [f64; 2] ) {
+        for i in 0..2 {
+            self[i].grabCoord = self[i].pxToCoord( mouse_PX[i] );
+        }
+    }
+
+    fn handleDrag( &mut self, mouse_PX: [f64; 2] ) {
+        for i in 0..2 {
+            let mouse_FRAC = self[i].pxToFrac( mouse_PX[i] );
+            self[i].set( mouse_FRAC, self[i].grabCoord, self[i].scale );
+        }
+    }
+
+    fn handleRelease( &mut self, mouse_PX: [f64; 2] ) {
+        for i in 0..2 {
+            let mouse_FRAC = self[i].pxToFrac( mouse_PX[i] );
+            self[i].set( mouse_FRAC, self[i].grabCoord, self[i].scale );
+        }
+    }
 }
 
 
@@ -45,61 +156,6 @@ struct Model {
     draggers: Vec<Rc<RefCell<dyn Dragger>>>,
     activeDragger: RefCell<Option<Rc<RefCell<dyn Dragger>>>>,
 }
-
-struct Axis2 {
-    viewport_PX: (f64,f64,f64,f64),
-    tieFrac: (f64,f64),
-    tieCoord: (f64,f64),
-    scale: (f64,f64),
-    grabCoord: (f64,f64),
-}
-
-impl Axis2 {
-    fn new( viewport_PX: (f64,f64,f64,f64) ) -> Axis2 {
-        Axis2 {
-            viewport_PX: viewport_PX,
-            tieFrac: ( 0.5, 0.5 ),
-            tieCoord: ( 0.0, 0.0 ),
-            scale: ( 1000.0, 1000.0 ),
-            grabCoord: ( 0.0, 0.0 ),
-        }
-    }
-}
-
-fn pxToAxisFrac( axis: &Axis2, loc_PX: (f64,f64) ) -> (f64,f64) {
-    // FIXME
-    return ( 0.5, 0.5 );
-}
-
-impl Dragger for Axis2 {
-    fn canHandlePress( &self, mouse_PX: (f64,f64) ) -> bool {
-        let mouse_FRAC = pxToAxisFrac( self, mouse_PX );
-        0.0 <= mouse_FRAC.0 && mouse_FRAC.0 <= 1.0 && 0.0 <= mouse_FRAC.1 && mouse_FRAC.1 <= 1.0
-    }
-
-    fn handlePress( &mut self, mouse_PX: (f64,f64) ) {
-        println!( "handlePress {:?}", mouse_PX );
-        // FIXME
-        self.grabCoord = ( 0.0, 0.0 );
-    }
-
-    fn handleDrag( &mut self, mouse_PX: (f64,f64) ) {
-        println!( "handleDrag {:?}", mouse_PX );
-        // FIXME
-    }
-
-    fn handleRelease( &mut self, mouse_PX: (f64,f64) ) {
-        println!( "handleRelease {:?}", mouse_PX );
-        // FIXME
-    }
-}
-
-fn lpxToPx( widget: &impl WidgetExt, xy_LPX: (f64,f64) ) -> (f64,f64) {
-    let scale = widget.get_scale_factor( ) as f64;
-    ( scale*xy_LPX.0 + 0.5, scale*xy_LPX.1 + 0.5 )
-}
-
-
 
 fn main( ) {
     glInit( );
@@ -114,7 +170,7 @@ fn main( ) {
     window.set_default_size( 480, 360 );
     window.add( &glArea );
 
-    let axis = Rc::new( RefCell::new( Axis2::new( ( 0.0, 0.0, 480.0, 360.0 ) ) ) );
+    let axis = Rc::new( RefCell::new( [ Axis::withSize_PX( 480.0 ), Axis::withSize_PX( 360.0 ) ] ) );
 
     let model = Rc::new( Model {
         draggers: vec![ axis.clone( ) ],
@@ -142,6 +198,7 @@ fn main( ) {
                 }
                 if let Some( dragger ) = &*model.activeDragger.borrow( ) {
                     dragger.borrow_mut( ).handlePress( mouse_PX );
+                    glArea.queue_draw( );
                 }
             }
             Inhibit( true )
@@ -154,6 +211,7 @@ fn main( ) {
             if let Some( dragger ) = &*model.activeDragger.borrow( ) {
                 let mouse_PX = lpxToPx( glArea, ev.get_position( ) );
                 dragger.borrow_mut( ).handleDrag( mouse_PX );
+                glArea.queue_draw( );
             }
             Inhibit( true )
         }
@@ -165,6 +223,7 @@ fn main( ) {
             if let Some( dragger ) = &*model.activeDragger.borrow( ) {
                 let mouse_PX = lpxToPx( glArea, ev.get_position( ) );
                 dragger.borrow_mut( ).handleRelease( mouse_PX );
+                glArea.queue_draw( );
             }
             *model.activeDragger.borrow_mut( ) = None;
             Inhibit( true )
@@ -189,4 +248,6 @@ fn main( ) {
 
     window.show_all( );
     gtk::main( );
+
+    // FIXME: How are the strong clones dropped? Maybe triggered when the thread exits?
 }
