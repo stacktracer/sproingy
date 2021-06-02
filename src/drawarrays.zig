@@ -7,8 +7,6 @@ usingnamespace @import( "util/misc.zig" );
 usingnamespace @import( "util/paint.zig" );
 
 pub const DrawArraysPaintable = struct {
-    painter: Painter,
-
     axis: *Axis2,
 
     mode: GLenum,
@@ -20,6 +18,8 @@ pub const DrawArraysPaintable = struct {
     vbo: GLuint,
     vCount: GLsizei,
     vao: GLuint,
+
+    painter: Painter,
 
     pub fn init( name: []const u8, axis: *Axis2, mode: GLenum, allocator: *Allocator ) DrawArraysPaintable {
         return DrawArraysPaintable {

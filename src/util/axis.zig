@@ -40,19 +40,18 @@ pub const Axis2 = struct {
     y: Axis1,
 
     grabCoord: Vec2,
-    dragger: Dragger,
+    dragger: Dragger = .{
+        .canHandlePressFn = canHandlePress,
+        .handlePressFn = handlePress,
+        .handleDragFn = handleDrag,
+        .handleReleaseFn = handleRelease,
+    },
 
     pub fn init( viewport_PX: Interval2 ) Axis2 {
         return Axis2 {
             .x = Axis1.init( viewport_PX.x ),
             .y = Axis1.init( viewport_PX.y ),
             .grabCoord = undefined,
-            .dragger = Dragger {
-                .canHandlePressFn = canHandlePress,
-                .handlePressFn = handlePress,
-                .handleDragFn = handleDrag,
-                .handleReleaseFn = handleRelease,
-            },
         };
     }
 

@@ -600,7 +600,9 @@ const BoxUpdater = struct {
     allocator: *Allocator,
     modelPtr: *?*Model,
     boxCoords: []GLfloat,
-    runnable: Runnable,
+    runnable: Runnable = .{
+        .runFn = runAndDestroySelf,
+    },
 
     pub fn createAndInit( allocator: *Allocator, modelPtr: *?*Model, boxCoords: []f64 ) !*BoxUpdater {
         var boxCoordsCopy = try allocator.alloc( GLfloat, boxCoords.len );
@@ -613,9 +615,6 @@ const BoxUpdater = struct {
             .allocator = allocator,
             .modelPtr = modelPtr,
             .boxCoords = boxCoordsCopy,
-            .runnable = .{
-                .runFn = runAndDestroySelf,
-            },
         };
         return self;
     }
@@ -639,7 +638,9 @@ const DotsUpdater = struct {
     allocator: *Allocator,
     modelPtr: *?*Model,
     dotCoords: []GLfloat,
-    runnable: Runnable,
+    runnable: Runnable = .{
+        .runFn = runAndDestroySelf,
+    },
 
     pub fn createAndInit( allocator: *Allocator, modelPtr: *?*Model, dotCoords: []f64 ) !*DotsUpdater {
         var dotCoordsCopy = try allocator.alloc( GLfloat, dotCoords.len );
@@ -652,9 +653,6 @@ const DotsUpdater = struct {
             .allocator = allocator,
             .modelPtr = modelPtr,
             .dotCoords = dotCoordsCopy,
-            .runnable = .{
-                .runFn = runAndDestroySelf,
-            },
         };
         return self;
     }

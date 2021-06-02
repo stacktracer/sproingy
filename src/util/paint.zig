@@ -40,8 +40,8 @@ pub const Painter = struct {
 };
 
 pub const MultiPaintable = struct {
-    painter: Painter,
     childPainters: ArrayList( *Painter ),
+    painter: Painter,
 
     pub fn init( name: []const u8, allocator: *Allocator ) MultiPaintable {
         return MultiPaintable {
@@ -90,11 +90,11 @@ pub const MultiPaintable = struct {
 };
 
 pub const ClearPaintable = struct {
-    painter: Painter,
     mask: GLbitfield,
     rgba: [4]GLfloat,
     depth: GLfloat,
     stencil: GLint,
+    painter: Painter,
 
     pub fn init( name: []const u8, mask: GLbitfield ) ClearPaintable {
         return ClearPaintable {

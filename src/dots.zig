@@ -7,8 +7,6 @@ usingnamespace @import( "util/misc.zig" );
 usingnamespace @import( "util/paint.zig" );
 
 pub const DotsPaintable = struct {
-    painter: Painter,
-
     axis: *Axis2,
 
     size_LPX: f64,
@@ -20,6 +18,8 @@ pub const DotsPaintable = struct {
     vbo: GLuint,
     vCount: GLsizei,
     vao: GLuint,
+
+    painter: Painter,
 
     pub fn init( name: []const u8, axis: *Axis2, allocator: *Allocator ) DotsPaintable {
         return DotsPaintable {
