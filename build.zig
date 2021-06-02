@@ -16,8 +16,20 @@ pub fn build( b: *Builder ) void {
 
     b.default_step.dependOn( &exe.step );
 
+    const runStep = b.step( "run", "Run the program" );
     const runCmd = exe.run( );
     runCmd.step.dependOn( b.getInstallStep( ) );
-    const runStep = b.step( "run", "Run the program" );
     runStep.dependOn( &runCmd.step );
+
+    const testStep = b.step( "test", "Run all tests" );
+    const testFiles = [_][]const u8 {
+        "src/util/misc.zig",
+    };
+    const target = b.standardTargetOptions(.{});
+    for ( testFiles ) |f| {
+        const testCmd = b.addTest( f );
+        testCmd.setTarget( target );
+        testCmd.setBuildMode( mode );
+        testStep.dependOn( &testCmd.step );
+    }
 }
