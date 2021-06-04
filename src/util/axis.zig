@@ -1,3 +1,7 @@
+const std = @import( "std" );
+const pow = std.math.pow;
+usingnamespace @import( "gtkz.zig" );
+usingnamespace @import( "glz.zig" );
 usingnamespace @import( "drag.zig" );
 usingnamespace @import( "misc.zig" );
 
@@ -118,3 +122,36 @@ pub fn pxToAxisFrac( axis: *const Axis2, xy_PX: Vec2 ) Vec2 {
         .y = 1.0 - axis.y.viewport_PX.valueToFrac( xy_PX.y ),
     };
 }
+
+pub const AxisUpdatingHandler = struct {
+    axes: []const *Axis2,
+
+    pub fn init( axes: []const *Axis2 ) AxisUpdatingHandler {
+        return AxisUpdatingHandler {
+            .axes = axes,
+        };
+    }
+
+    pub fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, self: *AxisUpdatingHandler ) callconv(.C) gboolean {
+        const viewport_PX = glzGetViewport_PX( );
+        for ( self.axes ) |axis| {
+            axis.setViewport_PX( viewport_PX );
+        }
+        return 0;
+    }
+
+    pub fn onMouseWheel( widget: *GtkWidget, ev: *GdkEventScroll, self: *AxisUpdatingHandler ) callconv(.C) gboolean {
+        const zoomStepFactor = 1.12;
+        const zoomSteps = glzWheelSteps( ev );
+        const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
+        const mouse_PX = gtkzMousePos_PX( widget, ev );
+        for ( self.axes ) |axis| {
+            const scale = xy( zoomFactor*axis.x.scale, zoomFactor*axis.y.scale );
+            const mouse_FRAC = pxToAxisFrac( axis, mouse_PX );
+            const mouse_XY = axis.getBounds( ).fracToValue( mouse_FRAC );
+            axis.set( mouse_FRAC, mouse_XY, scale );
+        }
+        gtk_widget_queue_draw( widget );
+        return 1;
+    }
+};

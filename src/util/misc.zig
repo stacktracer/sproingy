@@ -2,14 +2,6 @@ const std = @import( "std" );
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
-pub const Runnable = struct {
-    runFn: fn ( self: *Runnable ) anyerror!void,
-
-    pub fn run( self: *Runnable ) !void {
-        try self.runFn( self );
-    }
-};
-
 pub const Vec2 = struct {
     x: f64,
     y: f64,

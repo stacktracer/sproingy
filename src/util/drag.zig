@@ -1,3 +1,4 @@
+usingnamespace @import( "gtkz.zig" );
 usingnamespace @import( "misc.zig" );
 
 pub const Dragger = struct {
@@ -23,11 +24,53 @@ pub const Dragger = struct {
     }
 };
 
-pub fn findDragger( draggers: []const *Dragger, mouse_PX: Vec2 ) ?*Dragger {
-    for ( draggers ) |dragger| {
-        if ( dragger.canHandlePress( mouse_PX ) ) {
-            return dragger;
-        }
+pub const DraggingHandler = struct {
+    draggers: []const *Dragger,
+    activeDragger: ?*Dragger = null,
+
+    pub fn init( widget: gpointer, draggers: []const *Dragger ) !DraggingHandler {
+        return DraggingHandler {
+            .draggers = draggers,
+        };
     }
-    return null;
-}
+
+    pub fn onMouseDown( widget: *GtkWidget, ev: *GdkEventButton, self: *DraggingHandler ) callconv(.C) gboolean {
+        if ( self.activeDragger == null and ev.button == 1 ) {
+            const mouse_PX = gtkzMousePos_PX( widget, ev );
+            self.activeDragger = findDragger( self.draggers, mouse_PX );
+            if ( self.activeDragger != null ) {
+                self.activeDragger.?.handlePress( mouse_PX );
+                gtk_widget_queue_draw( widget );
+            }
+        }
+        return 1;
+    }
+
+    pub fn onMouseMove( widget: *GtkWidget, ev: *GdkEventMotion, self: *DraggingHandler ) callconv(.C) gboolean {
+        if ( self.activeDragger != null ) {
+            const mouse_PX = gtkzMousePos_PX( widget, ev );
+            self.activeDragger.?.handleDrag( mouse_PX );
+            gtk_widget_queue_draw( widget );
+        }
+        return 1;
+    }
+
+    pub fn onMouseUp( widget: *GtkWidget, ev: *GdkEventButton, self: *DraggingHandler ) callconv(.C) gboolean {
+        if ( self.activeDragger != null and ev.button == 1 ) {
+            const mouse_PX = gtkzMousePos_PX( widget, ev );
+            self.activeDragger.?.handleRelease( mouse_PX );
+            self.activeDragger = null;
+            gtk_widget_queue_draw( widget );
+        }
+        return 1;
+    }
+
+    fn findDragger( draggers: []const *Dragger, mouse_PX: Vec2 ) ?*Dragger {
+        for ( draggers ) |dragger| {
+            if ( dragger.canHandlePress( mouse_PX ) ) {
+                return dragger;
+            }
+        }
+        return null;
+    }
+};
