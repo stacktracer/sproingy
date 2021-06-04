@@ -25,6 +25,10 @@ const SimControlImpl = struct {
     pendingBoxCoords: ?[]GLfloat = null,
     pendingDotCoords: ?[]GLfloat = null,
 
+    // FIXME: Is pseudo-trait pattern thread-safe?
+    // FIXME: Once deinit() runs, sim-call fns should be noops
+    // FIXME: Could we move pendingCoords into the painters, and give them thread-safe setters? Maybe with atomic load/store, and double-checked locking?
+
     simControl: SimControl = SimControl {
         .setBoxFn = setBox,
         .isRunningFn = isRunning,
