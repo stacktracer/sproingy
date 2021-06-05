@@ -44,7 +44,7 @@ const SimControlImpl = struct {
 
         var newCoords = try self.allocator.alloc( GLfloat, boxCoords.len );
         for ( boxCoords ) |coord,i| {
-            newCoords[ i ] = @floatCast( GLfloat, coord );
+            newCoords[i] = @floatCast( GLfloat, coord );
         }
 
         var oldCoords = sync: {
@@ -56,12 +56,17 @@ const SimControlImpl = struct {
         };
 
         if ( oldCoords != null ) {
-            // TODO: Recycle?
+            // We could recycle old coord slices, but it would require either
+            // moving the copy loop inside the mutex block, or complicating
+            // the mutex patern ... neither of which seems worth the trouble
             self.allocator.free( oldCoords.? );
         }
 
-        // FIXME: Call g_source_remove() somewhere
-        const source = g_timeout_add( 0, @ptrCast( GSourceFunc, doUpdateBox ), self );
+        // We never call g_source_remove(), so the callback could stay in
+        // the queue indefinitely, which feels sloppy ... however, calling
+        // g_source_remove() later is no good, because the callback might
+        // already have run (and removed itself by returning REMOVE)
+        _ = g_timeout_add( 0, @ptrCast( GSourceFunc, doUpdateBox ), self );
     }
 
     /// Called on GTK thread
@@ -117,7 +122,7 @@ const SimControlImpl = struct {
 
         var newCoords = try self.allocator.alloc( GLfloat, dotCoords.len );
         for ( dotCoords ) |coord,i| {
-            newCoords[ i ] = @floatCast( GLfloat, coord );
+            newCoords[i] = @floatCast( GLfloat, coord );
         }
 
         var oldCoords = sync: {
@@ -129,12 +134,17 @@ const SimControlImpl = struct {
         };
 
         if ( oldCoords != null ) {
-            // TODO: Recycle?
+            // We could recycle old coord slices, but it would require either
+            // moving the copy loop inside the mutex block, or complicating
+            // the mutex patern ... neither of which seems worth the trouble
             self.allocator.free( oldCoords.? );
         }
 
-        // FIXME: Call g_source_remove() somewhere
-        const source = g_timeout_add( 0, @ptrCast( GSourceFunc, doUpdateDots ), self );
+        // We never call g_source_remove(), so the callback could stay in
+        // the queue indefinitely, which feels sloppy ... however, calling
+        // g_source_remove() later is no good, because the callback might
+        // already have run (and removed itself by returning REMOVE)
+        _ = g_timeout_add( 0, @ptrCast( GSourceFunc, doUpdateDots ), self );
     }
 
     /// Called on GTK thread

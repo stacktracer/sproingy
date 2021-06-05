@@ -85,7 +85,6 @@ pub fn runSimulation( control: *SimControl ) void {
         }
     }
 
-    // TODO: Exit condition?
     const updateInterval_MILLIS = control.getUpdateInterval_MILLIS( );
     var nextUpdate_PMILLIS = @as( i64, minInt( i64 ) );
     while ( control.keepRunning( ) ) {
