@@ -86,6 +86,25 @@ pub fn glzGetViewport_PX( ) Interval2 {
     return xywh( @intToFloat( f64, viewport_PX[0] ), @intToFloat( f64, viewport_PX[1] ), @intToFloat( f64, viewport_PX[2] ), @intToFloat( f64, viewport_PX[3] ) );
 }
 
+pub fn glzWheelSteps( ev: *GdkEventScroll ) f64 {
+    var direction: GdkScrollDirection = undefined;
+    if ( gdk_event_get_scroll_direction( @ptrCast( *GdkEvent, ev ), &direction ) != 0 ) {
+        return switch ( direction ) {
+            .GDK_SCROLL_UP => 1.0,
+            .GDK_SCROLL_DOWN => -1.0,
+            else => 0.0,
+        };
+    }
+
+    var xDelta: f64 = undefined;
+    var yDelta: f64 = undefined;
+    if ( gdk_event_get_scroll_deltas( @ptrCast( *GdkEvent, ev ), &xDelta, &yDelta ) != 0 ) {
+        return yDelta;
+    }
+
+    return 0.0;
+}
+
 pub fn glzHasCurrentContext( ) bool {
     var major: GLint = -1;
     glGetIntegerv( GL_MAJOR_VERSION, &major );

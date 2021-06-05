@@ -1,6 +1,8 @@
 const std = @import( "std" );
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
+usingnamespace @import( "gtkz.zig" );
+usingnamespace @import( "glz.zig" );
 usingnamespace @import( "misc.zig" );
 usingnamespace @import( "c.zig" );
 
@@ -36,6 +38,41 @@ pub const Painter = struct {
             self.glDeinitFn( self );
             self.glResourcesAreSet = false;
         }
+    }
+};
+
+pub const PaintingHandler = struct {
+    painters: []const *Painter,
+
+    pub fn init( painters: []const *Painter ) PaintingHandler {
+        return PaintingHandler {
+            .painters = painters,
+        };
+    }
+
+    pub fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, self: *PaintingHandler ) callconv(.C) gboolean {
+        const pc = PainterContext {
+            .viewport_PX = glzGetViewport_PX( ),
+            .lpxToPx = gtkzScaleFactor( @ptrCast( *GtkWidget, glArea ) ),
+        };
+        for ( self.painters ) |painter| {
+            painter.glPaint( &pc ) catch |e| {
+                std.debug.warn( "Failed to paint: painter = {}, error = {}\n", .{ painter.name, e } );
+            };
+        }
+        return 0;
+    }
+
+    pub fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, self: *PaintingHandler ) callconv(.C) gboolean {
+        if ( glzHasCurrentContext( ) ) {
+            for ( self.painters ) |painter| {
+                painter.glDeinit( );
+            }
+        }
+        else {
+            std.debug.warn( "Failed to deinit painters; no current GL Context\n", .{} );
+        }
+        return 0;
     }
 };
 

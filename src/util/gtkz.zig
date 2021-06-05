@@ -11,14 +11,14 @@ pub const GtkzHandlerConnection = struct {
     handlerId: gulong,
 };
 
-pub fn gtkzConnectHandler( instance: gpointer, signalName: [*c]const gchar, handler: GCallback, userData: gpointer ) !GtkzHandlerConnection {
+pub fn gtkzConnectHandler( instance: gpointer, signalName: [*c]const gchar, handlerFn: anytype, userData: gpointer ) !GtkzHandlerConnection {
     return GtkzHandlerConnection {
         .instance = instance,
-        .handlerId = try gtkz_signal_connect( instance, signalName, handler, userData ),
+        .handlerId = try gtkz_signal_connect( instance, signalName, @ptrCast( GCallback, handlerFn ), userData ),
     };
 }
 
-pub fn gtkzDisconnectHandlers( connections: []GtkzHandlerConnection ) void {
+pub fn gtkzDisconnectHandlers( connections: []const GtkzHandlerConnection ) void {
     for ( connections ) |conn| {
         g_signal_handler_disconnect( conn.instance, conn.handlerId );
     }
@@ -73,15 +73,39 @@ pub fn gtkz_signal_connect_data( instance: gpointer, signalName: [*c]const gchar
     };
 }
 
-/// Takes ownership of the runner.
-pub fn gtkzInvokeOnce( runnable: *Runnable ) void {
-    // FIXME: Call g_source_remove() somewhere
-    const source = g_timeout_add( 0, @ptrCast( GSourceFunc, gtkzRunOnce ), runnable );
-}
+pub const CloseKeysHandler = struct {
+    keyvals: []const guint,
 
-fn gtkzRunOnce( runnable: *Runnable ) callconv(.C) guint {
-    runnable.run( ) catch |e| {
-        std.debug.warn( "Failed to run: error = {}\n", .{ e } );
-    };
-    return G_SOURCE_REMOVE;
-}
+    pub fn init( keyvals: []const guint ) @This() {
+        return @This() {
+            .keyvals = keyvals,
+        };
+    }
+
+    pub fn onKeyDown( widget: *GtkWidget, ev: *GdkEventKey, self: *@This() ) callconv(.C) gboolean {
+        // TODO: Use a hash set
+        for ( self.keyvals ) |keyval| {
+            if ( ev.keyval == keyval ) {
+                const ancestor = gtk_widget_get_toplevel( widget );
+                if ( gtk_widget_is_toplevel( ancestor ) == 1 ) {
+                    gtk_window_close( @ptrCast( *GtkWindow, ancestor ) );
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    }
+};
+
+pub const QuittingHandler = struct {
+    _ignored: u32 = undefined,
+
+    pub fn init( ) QuittingHandler {
+        return QuittingHandler {};
+    }
+
+    pub fn onWindowClosing( window: *GtkWindow, ev: *GdkEvent, self: *@This() ) callconv(.C) gboolean {
+        gtk_main_quit( );
+        return 0;
+    }
+};
