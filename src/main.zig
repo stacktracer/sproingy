@@ -11,9 +11,16 @@ usingnamespace @import( "util/paint.zig" );
 usingnamespace @import( "drawarrays.zig" );
 usingnamespace @import( "dots.zig" );
 
+// TODO: Understand why this magic makes async/await work sensibly
+pub const io_mode = .evented;
+
 const SimControlImpl = struct {
     // Thread-safe
     allocator: *Allocator,
+
+    // Accessed atomically
+    _keepRunning: bool = true,
+    _updateInterval_MILLIS: i64 = 15,
 
     // Accessed only on GTK thread
     boxPaintable: *DrawArraysPaintable,
@@ -25,20 +32,18 @@ const SimControlImpl = struct {
     pendingBoxCoords: ?[]GLfloat = null,
     pendingDotCoords: ?[]GLfloat = null,
 
-    // FIXME: Is pseudo-trait pattern thread-safe?
-    // FIXME: Once deinit() runs, sim-call fns should be noops
-    // FIXME: Could we move pendingCoords into the painters, and give them thread-safe setters? Maybe with atomic load/store, and double-checked locking?
-
     simControl: SimControl = SimControl {
         .setBoxFn = setBox,
-        .isRunningFn = isRunning,
+        .keepRunningFn = keepRunning,
         .getUpdateIntervalFn_MILLIS = getUpdateInterval_MILLIS,
         .setDotsFn = setDots,
     },
 
-    /// Runs on simulator thread
+    /// Called on simulator thread
     fn setBox( simControl: *SimControl, boxCoords: []const f64 ) !void {
         const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
+
+        // TODO: Most of this method can probably be pulled out into a standalone fn
 
         var newCoords = try self.allocator.alloc( GLfloat, boxCoords.len );
         for ( boxCoords ) |coord,i| {
@@ -62,7 +67,7 @@ const SimControlImpl = struct {
         const source = g_timeout_add( 0, @ptrCast( GSourceFunc, doUpdateBox ), self );
     }
 
-    /// Runs on GTK thread
+    /// Called on GTK thread
     fn doUpdateBox( self_: *SimControlImpl ) callconv(.C) guint {
         struct {
             fn run( self: *SimControlImpl ) !void {
@@ -86,19 +91,30 @@ const SimControlImpl = struct {
         return G_SOURCE_REMOVE;
     }
 
-    /// Runs on simulator thread
-    fn isRunning( simControl: *SimControl ) bool {
-        // TODO: Mutations must be thread-safe
-        return true;
+    /// Called on any thread
+    pub fn stopRunning( self: *SimControlImpl ) void {
+        // TODO: What do the AtomicOrder values mean?
+        @atomicStore( bool, &self._keepRunning, false, .SeqCst );
     }
 
-    /// Runs on simulator thread
+    /// Called on any thread
+    pub fn setUpdateInterval_MILLIS( self: *SimControlImpl, updateInterval_MILLIS: i64 ) void {
+        @atomicStore( i64, &self._updateInterval_MILLIS, updateInterval_MILLIS, .SeqCst );
+    }
+
+    /// Called on simulator thread
+    fn keepRunning( simControl: *SimControl ) bool {
+        const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
+        return @atomicLoad( bool, &self._keepRunning, .SeqCst );
+    }
+
+    /// Called on simulator thread
     fn getUpdateInterval_MILLIS( simControl: *SimControl ) i64 {
-        // TODO: Mutations must be thread-safe
-        return 15;
+        const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
+        return @atomicLoad( i64, &self._updateInterval_MILLIS, .SeqCst );
     }
 
-    /// Runs on simulator thread
+    /// Called on simulator thread
     fn setDots( simControl: *SimControl, dotCoords: []const f64 ) !void {
         const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
 
@@ -124,7 +140,7 @@ const SimControlImpl = struct {
         const source = g_timeout_add( 0, @ptrCast( GSourceFunc, doUpdateDots ), self );
     }
 
-    /// Runs on GTK thread
+    /// Called on GTK thread
     fn doUpdateDots( self_: *SimControlImpl ) callconv(.C) guint {
         struct {
             fn run( self: *SimControlImpl ) !void {
@@ -148,7 +164,7 @@ const SimControlImpl = struct {
         return G_SOURCE_REMOVE;
     }
 
-    /// Runs on GTK thread
+    /// Called on GTK thread, after simulator thread has exited
     pub fn deinit( self: *SimControlImpl ) void {
         var oldCoords = sync: {
             const held = self.mutex.acquire( );
@@ -230,12 +246,14 @@ pub fn main( ) !void {
         .dotsPaintable = &dotsPaintable,
         .glArea = glArea,
     };
+    simControlImpl.setUpdateInterval_MILLIS( 15 );
     defer simControlImpl.deinit( );
-
-    const thread = try std.Thread.spawn( &simControlImpl.simControl, runSimulation );
+    var simFrame = async runSimulation( &simControlImpl.simControl );
 
     gtk_widget_show_all( window );
     gtk_main( );
 
-    // FIXME: simControlImpl gets dropped here, but sim thread could still be using it
+    // Main-thread stack needs to stay valid until sim-thread exits
+    simControlImpl.stopRunning( );
+    await simFrame;
 }

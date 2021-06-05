@@ -6,7 +6,7 @@ const milliTimestamp = std.time.milliTimestamp;
 /// Impls must be thread-safe.
 pub const SimControl = struct {
     setBoxFn: fn ( self: *SimControl, boxCoords: []const f64 ) anyerror!void,
-    isRunningFn: fn ( self: *SimControl ) bool,
+    keepRunningFn: fn ( self: *SimControl ) bool,
     getUpdateIntervalFn_MILLIS: fn ( self: *SimControl ) i64,
     setDotsFn: fn ( self: *SimControl, dotCoords: []const f64 ) anyerror!void,
 
@@ -14,8 +14,8 @@ pub const SimControl = struct {
         return self.setBoxFn( self, boxCoords );
     }
 
-    pub fn isRunning( self: *SimControl ) bool {
-        return self.isRunningFn( self );
+    pub fn keepRunning( self: *SimControl ) bool {
+        return self.keepRunningFn( self );
     }
 
     pub fn getUpdateInterval_MILLIS( self: *SimControl ) i64 {
@@ -31,6 +31,11 @@ pub const SimControl = struct {
 pub fn runSimulation( control: *SimControl ) void {
     // Coords per dot
     comptime const n = 2;
+
+    // TODO: Understand why this magic makes async/await work sensibly
+    std.event.Loop.startCpuBoundOperation( );
+
+    // TODO: Move sim config to main
 
     const dotCount = 3;
     const coordCount = dotCount * n;
@@ -86,7 +91,7 @@ pub fn runSimulation( control: *SimControl ) void {
     // TODO: Exit condition?
     const updateInterval_MILLIS = control.getUpdateInterval_MILLIS( );
     var nextUpdate_PMILLIS = @as( i64, minInt( i64 ) );
-    while ( control.isRunning( ) ) {
+    while ( control.keepRunning( ) ) {
         // Send dot coords to the listener periodically
         const now_PMILLIS = milliTimestamp( );
         if ( now_PMILLIS >= nextUpdate_PMILLIS ) {
