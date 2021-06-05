@@ -11,9 +11,6 @@ usingnamespace @import( "util/paint.zig" );
 usingnamespace @import( "drawarrays.zig" );
 usingnamespace @import( "dots.zig" );
 
-// TODO: Understand why this magic makes async/await work sensibly
-pub const io_mode = .evented;
-
 const SimControlImpl = struct {
     // Thread-safe
     allocator: *Allocator,
@@ -248,12 +245,12 @@ pub fn main( ) !void {
     };
     simControlImpl.setUpdateInterval_MILLIS( 15 );
     defer simControlImpl.deinit( );
-    var simFrame = async runSimulation( &simControlImpl.simControl );
+    const simThread = try std.Thread.spawn( &simControlImpl.simControl, runSimulation );
 
     gtk_widget_show_all( window );
     gtk_main( );
 
     // Main-thread stack needs to stay valid until sim-thread exits
     simControlImpl.stopRunning( );
-    await simFrame;
+    simThread.wait( );
 }

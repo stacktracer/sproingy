@@ -32,9 +32,6 @@ pub fn runSimulation( control: *SimControl ) void {
     // Coords per dot
     comptime const n = 2;
 
-    // TODO: Understand why this magic makes async/await work sensibly
-    std.event.Loop.startCpuBoundOperation( );
-
     // TODO: Move sim config to main
 
     const dotCount = 3;
