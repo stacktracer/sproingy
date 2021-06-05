@@ -1,4 +1,10 @@
 
+Run in a nested window with artificially inflated display scaling:
+```
+MUTTER_DEBUG_DUMMY_MODE_SPECS=1700x1000 MUTTER_DEBUG_DUMMY_MONITOR_SCALES=2 mutter --wayland --nested
+WAYLAND_DISPLAY=wayland-1 ./zig-cache/bin/sproingy
+```
+
 Record a GIF:
 ```
 # Doesn't work in Wayland
@@ -17,12 +23,12 @@ valgrind \
  --suppressions=/usr/share/glib-2.0/valgrind/glib.supp \
  --num-callers=30 \
  --log-file=valgrind.txt \
- ./program
+ ./zig-cache/bin/sproingy
 ```
 
 Show GTK Inspector:
 ```
 GTK_DEBUG=interactive \
  GOBJECT_DEBUG=instance-count \
- ./program
+ ./zig-cache/bin/sproingy
 ```

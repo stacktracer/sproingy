@@ -3,155 +3,183 @@ const pow = std.math.pow;
 usingnamespace @import( "gtkz.zig" );
 usingnamespace @import( "glz.zig" );
 usingnamespace @import( "drag.zig" );
-usingnamespace @import( "misc.zig" );
 
-pub const Axis1 = struct {
-    viewport_PX: Interval1,
-    tieFrac: f64 = 0.5,
-    tieCoord: f64 = 0.0,
-    scale: f64 = 1000,
+pub const Interval = struct {
+    /// Inclusive start point.
+    start: f64,
 
-    pub fn init( viewport_PX: Interval1 ) Axis1 {
-        return Axis1 {
-            .viewport_PX = viewport_PX,
+    /// Difference between start and exclusive end.
+    span: f64,
+
+    pub fn init( start: f64, span: f64 ) Interval {
+        return Interval {
+            .start = start,
+            .span = span,
         };
     }
 
-    pub fn pan( self: *Axis1, frac: f64, coord: f64 ) void {
-        const scale = self.scale;
-        self.set( frac, coord, scale );
+    pub fn set( self: *Interval, start: f64, span: f64 ) void {
+        self.start = start;
+        self.span = span;
     }
 
-    pub fn set( self: *Axis1, frac: f64, coord: f64, scale: f64 ) void {
+    pub fn valueToFrac( self: *const Interval, value: f64 ) f64 {
+        return ( ( value - self.start ) / self.span );
+    }
+
+    pub fn fracToValue( self: *const Interval, frac: f64 ) f64 {
+        return ( self.start + frac*self.span );
+    }
+};
+
+pub const Axis = struct {
+    viewport_PX: Interval,
+    tieFrac: f64 = 0.5,
+    tieCoord: f64 = 0.0,
+    scale: f64,
+
+    pub fn init( viewport_PX: Interval, scale: f64 ) Axis {
+        return Axis {
+            .viewport_PX = viewport_PX,
+            .scale = scale,
+        };
+    }
+
+    pub fn bounds( self: *const Axis ) Interval {
+        const span = self.viewport_PX.span / self.scale;
+        const start = self.tieCoord - self.tieFrac*span;
+        return Interval.init( start, span );
+    }
+
+    pub fn set( self: *Axis, frac: f64, coord: f64, scale: f64 ) void {
         // TODO: Apply constraints
         const span = self.viewport_PX.span / scale;
         self.tieCoord = coord + ( self.tieFrac - frac )*span;
         self.scale = scale;
     }
-
-    pub fn getBounds( self: *const Axis1 ) Interval1 {
-        const span = self.viewport_PX.span / self.scale;
-        const min = self.tieCoord - self.tieFrac*span;
-        return Interval1 {
-            .min = min,
-            .span = span,
-        };
-    }
 };
 
-pub const Axis2 = struct {
-    x: Axis1,
-    y: Axis1,
-
-    grabCoord: Vec2,
-    dragger: Dragger = .{
-        .canHandlePressFn = canHandlePress,
-        .handlePressFn = handlePress,
-        .handleDragFn = handleDrag,
-        .handleReleaseFn = handleRelease,
-    },
-
-    pub fn init( viewport_PX: Interval2 ) Axis2 {
-        return Axis2 {
-            .x = Axis1.init( viewport_PX.x ),
-            .y = Axis1.init( viewport_PX.y ),
-            .grabCoord = undefined,
-        };
+pub fn axisBounds( comptime n: usize, axes: [n]*const Axis ) [n]Interval {
+    var bounds = @as( [n]Interval, undefined );
+    for ( axes ) |axis, i| {
+        bounds[i] = axis.bounds( );
     }
+    return bounds;
+}
 
-    fn canHandlePress( dragger: *Dragger, mouse_PX: Vec2 ) bool {
-        const self = @fieldParentPtr( Axis2, "dragger", dragger );
-        const mouse_FRAC = pxToAxisFrac( self, mouse_PX );
-        return ( 0 <= mouse_FRAC.x and mouse_FRAC.x <= 1 and 0 <= mouse_FRAC.y and mouse_FRAC.y <= 1 );
-    }
+pub fn AxisDraggable( comptime n: usize ) type {
+    return struct {
+        const Self = @This();
 
-    fn handlePress( dragger: *Dragger, mouse_PX: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2, "dragger", dragger );
-        const mouse_FRAC = pxToAxisFrac( self, mouse_PX );
-        self.grabCoord = self.getBounds( ).fracToValue( mouse_FRAC );
-    }
+        axes: [n]*Axis,
+        mouseCoordIndices: [n]u1,
+        grabCoords: [n]f64,
 
-    fn handleDrag( dragger: *Dragger, mouse_PX: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2, "dragger", dragger );
-        const mouse_FRAC = pxToAxisFrac( self, mouse_PX );
-        self.pan( mouse_FRAC, self.grabCoord );
-    }
+        dragger: Dragger = .{
+            .canHandlePressFn = canHandlePress,
+            .handlePressFn = handlePress,
+            .handleDragFn = handleDrag,
+            .handleReleaseFn = handleRelease,
+        },
 
-    fn handleRelease( dragger: *Dragger, mouse_PX: Vec2 ) void {
-        const self = @fieldParentPtr( Axis2, "dragger", dragger );
-        const mouse_FRAC = pxToAxisFrac( self, mouse_PX );
-        self.pan( mouse_FRAC, self.grabCoord );
-    }
+        pub fn init( axes: [n]*Axis, mouseCoordIndices: [n]u1 ) Self {
+            return Self {
+                .axes = axes,
+                .mouseCoordIndices = mouseCoordIndices,
+                .grabCoords = undefined,
+            };
+        }
 
-    pub fn setViewport_PX( self: *Axis2, viewport_PX: Interval2 ) void {
-        self.x.viewport_PX = viewport_PX.x;
-        self.y.viewport_PX = viewport_PX.y;
-    }
+        fn canHandlePress( dragger: *Dragger, mouse_PX: [2]f64 ) bool {
+            const self = @fieldParentPtr( Self, "dragger", dragger );
+            for ( self.mouseCoordIndices ) |m, i| {
+                const axis = self.axes[i];
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+                if ( mouseFrac < 0.0 or mouseFrac > 1.0 ) {
+                    return false;
+                }
+            }
+            return true;
+        }
 
-    pub fn getViewport_PX( self: *const Axis2 ) Interval2 {
-        return Interval2 {
-            .x = self.x.viewport_PX,
-            .y = self.y.viewport_PX,
-        };
-    }
+        fn handlePress( dragger: *Dragger, mouse_PX: [2]f64 ) void {
+            const self = @fieldParentPtr( Self, "dragger", dragger );
+            for ( self.mouseCoordIndices ) |m, i| {
+                const axis = self.axes[i];
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+                self.grabCoords[i] = axis.bounds( ).fracToValue( mouseFrac );
+            }
+        }
 
-    pub fn pan( self: *Axis2, frac: Vec2, coord: Vec2 ) void {
-        // TODO: Not sure this will work well with axis constraints
-        self.x.pan( frac.x, coord.x );
-        self.y.pan( frac.y, coord.y );
-    }
+        fn handleDrag( dragger: *Dragger, mouse_PX: [2]f64 ) void {
+            const self = @fieldParentPtr( Self, "dragger", dragger );
+            for ( self.mouseCoordIndices ) |m, i| {
+                const axis = self.axes[i];
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+                axis.set( mouseFrac, self.grabCoords[i], axis.scale );
+            }
+        }
 
-    pub fn set( self: *Axis2, frac: Vec2, coord: Vec2, scale: Vec2 ) void {
-        // TODO: Not sure this will work well with axis constraints
-        self.x.set( frac.x, coord.x, scale.x );
-        self.y.set( frac.y, coord.y, scale.y );
-    }
-
-    pub fn getBounds( self: *const Axis2 ) Interval2 {
-        return Interval2 {
-            .x = self.x.getBounds( ),
-            .y = self.y.getBounds( ),
-        };
-    }
-};
-
-pub fn pxToAxisFrac( axis: *const Axis2, xy_PX: Vec2 ) Vec2 {
-    // Flip y so it increases upward
-    return Vec2 {
-        .x = axis.x.viewport_PX.valueToFrac( xy_PX.x ),
-        .y = 1.0 - axis.y.viewport_PX.valueToFrac( xy_PX.y ),
+        fn handleRelease( dragger: *Dragger, mouse_PX: [2]f64 ) void {
+            const self = @fieldParentPtr( Self, "dragger", dragger );
+            for ( self.mouseCoordIndices ) |m, i| {
+                const axis = self.axes[i];
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+                axis.set( mouseFrac, self.grabCoords[i], axis.scale );
+            }
+        }
     };
 }
 
-pub const AxisUpdatingHandler = struct {
-    axes: []const *Axis2,
+pub fn AxisUpdatingHandler( comptime n: usize ) type {
+    return struct {
+        const Self = @This();
 
-    pub fn init( axes: []const *Axis2 ) AxisUpdatingHandler {
-        return AxisUpdatingHandler {
-            .axes = axes,
-        };
-    }
+        axes: [n]*Axis,
+        mouseCoordIndices: [n]u1,
+        prevScaleFactor: f64,
 
-    pub fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, self: *AxisUpdatingHandler ) callconv(.C) gboolean {
-        const viewport_PX = glzGetViewport_PX( );
-        for ( self.axes ) |axis| {
-            axis.setViewport_PX( viewport_PX );
+        pub fn init( axes: [n]*Axis, mouseCoordIndices: [n]u1 ) Self {
+            return Self {
+                .axes = axes,
+                .mouseCoordIndices = mouseCoordIndices,
+                .prevScaleFactor = 1.0,
+            };
         }
-        return 0;
-    }
 
-    pub fn onMouseWheel( widget: *GtkWidget, ev: *GdkEventScroll, self: *AxisUpdatingHandler ) callconv(.C) gboolean {
-        const zoomStepFactor = 1.12;
-        const zoomSteps = glzWheelSteps( ev );
-        const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
-        const mouse_PX = gtkzMousePos_PX( widget, ev );
-        for ( self.axes ) |axis| {
-            const scale = xy( zoomFactor*axis.x.scale, zoomFactor*axis.y.scale );
-            const mouse_FRAC = pxToAxisFrac( axis, mouse_PX );
-            const mouse_XY = axis.getBounds( ).fracToValue( mouse_FRAC );
-            axis.set( mouse_FRAC, mouse_XY, scale );
+        pub fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, self: *Self ) callconv(.C) gboolean {
+            const oldScaleFactor = self.prevScaleFactor;
+            const newScaleFactor = gtkzScaleFactor( @ptrCast( *GtkWidget, glArea ) );
+            if ( newScaleFactor != oldScaleFactor ) {
+                const scaleChangeFactor = newScaleFactor / oldScaleFactor;
+                for ( self.axes ) |axis, i| {
+                    axis.scale *= scaleChangeFactor;
+                }
+                self.prevScaleFactor = newScaleFactor;
+            }
+
+            const viewport_PX = glzGetViewport_PX( );
+            for ( self.axes ) |axis, i| {
+                axis.viewport_PX = viewport_PX[i];
+            }
+
+            return 0;
         }
-        gtk_widget_queue_draw( widget );
-        return 1;
-    }
-};
+
+        pub fn onMouseWheel( widget: *GtkWidget, ev: *GdkEventScroll, self: *Self ) callconv(.C) gboolean {
+            const zoomStepFactor = 1.12;
+            const zoomSteps = glzWheelSteps( ev );
+            const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
+            const mouse_PX = gtkzMousePos_PX( widget, ev );
+            for ( self.mouseCoordIndices ) |m, i| {
+                const axis = self.axes[i];
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+                const mouseCoord = axis.bounds( ).fracToValue( mouseFrac );
+                const scale = zoomFactor*axis.scale;
+                axis.set( mouseFrac, mouseCoord, scale );
+            }
+            gtk_widget_queue_draw( widget );
+            return 1;
+        }
+    };
+}

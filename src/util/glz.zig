@@ -1,6 +1,6 @@
 const std = @import( "std" );
 pub usingnamespace @import( "c.zig" );
-pub usingnamespace @import( "misc.zig" );
+usingnamespace @import( "axis.zig" );
 
 pub const GlzError = error {
     GenericFailure,
@@ -72,18 +72,25 @@ pub fn glzDisableBlending( ) void {
     glDisable( GL_BLEND );
 }
 
-pub fn glzUniformInterval2( location: GLint, interval: Interval2 ) void {
+pub fn glzUniformInterval2( location: GLint, interval: [2]Interval ) void {
     glUniform4f( location,
-                 @floatCast( f32, interval.x.min ),
-                 @floatCast( f32, interval.y.min ),
-                 @floatCast( f32, interval.x.span ),
-                 @floatCast( f32, interval.y.span ) );
+                 @floatCast( f32, interval[0].start ),
+                 @floatCast( f32, interval[1].start ),
+                 @floatCast( f32, interval[0].span ),
+                 @floatCast( f32, interval[1].span ) );
 }
 
-pub fn glzGetViewport_PX( ) Interval2 {
+pub fn glzGetViewport_PX( ) [2]Interval {
     var viewport_PX: [4]GLint = [_]GLint{ -1, -1, -1, -1 };
     glGetIntegerv( GL_VIEWPORT, &viewport_PX );
-    return xywh( @intToFloat( f64, viewport_PX[0] ), @intToFloat( f64, viewport_PX[1] ), @intToFloat( f64, viewport_PX[2] ), @intToFloat( f64, viewport_PX[3] ) );
+    const x = @intToFloat( f64, viewport_PX[0] );
+    const y = @intToFloat( f64, viewport_PX[1] );
+    const w = @intToFloat( f64, viewport_PX[2] );
+    const h = @intToFloat( f64, viewport_PX[3] );
+    return [_]Interval {
+        Interval.init( x, w ),
+        Interval.init( y, h ),
+    };
 }
 
 pub fn glzWheelSteps( ev: *GdkEventScroll ) f64 {

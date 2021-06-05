@@ -43,7 +43,7 @@ const SimControlImpl = struct {
         // TODO: Most of this method can probably be pulled out into a standalone fn
 
         var newCoords = try self.allocator.alloc( GLfloat, boxCoords.len );
-        for ( boxCoords ) |coord,i| {
+        for ( boxCoords ) |coord, i| {
             newCoords[i] = @floatCast( GLfloat, coord );
         }
 
@@ -121,7 +121,7 @@ const SimControlImpl = struct {
         const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
 
         var newCoords = try self.allocator.alloc( GLfloat, dotCoords.len );
-        for ( dotCoords ) |coord,i| {
+        for ( dotCoords ) |coord, i| {
             newCoords[i] = @floatCast( GLfloat, coord );
         }
 
@@ -195,17 +195,18 @@ pub fn main( ) !void {
     defer args.deinit( );
     gtk_init( &args.argc, &args.argv );
 
-    var axis = Axis2.init( xywh( 0, 0, 480, 360 ) );
-    axis.set( xy( 0.5, 0.5 ), xy( 0, 0 ), xy( 28.2, 28.2 ) );
+    var axis0 = Axis.init( Interval.init( 0, 480 ), 28.2 );
+    var axis1 = Axis.init( Interval.init( 0, 360 ), 28.2 );
+    var axes = [_]*Axis { &axis0, &axis1 };
 
     var bgPaintable = ClearPaintable.init( "bg", GL_COLOR_BUFFER_BIT );
     bgPaintable.rgba = [_]GLfloat { 0.4, 0.4, 0.4, 1.0 };
 
-    var boxPaintable = DrawArraysPaintable.init( "box", &axis, GL_TRIANGLE_STRIP, allocator );
+    var boxPaintable = DrawArraysPaintable.init( "box", axes, GL_TRIANGLE_STRIP, allocator );
     defer boxPaintable.deinit( );
     boxPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
 
-    var dotsPaintable = DotsPaintable.init( "dots", &axis, allocator );
+    var dotsPaintable = DotsPaintable.init( "dots", axes, allocator );
     defer dotsPaintable.deinit( );
     dotsPaintable.rgba = [_]GLfloat { 1.0, 0.0, 0.0, 1.0 };
 
@@ -224,17 +225,17 @@ pub fn main( ) !void {
     gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
     gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
 
-    const axes = [_]*Axis2 { &axis };
-    var axisUpdatingHandler = AxisUpdatingHandler.init( &axes );
-    _ = try gtkzConnectHandler( glArea, "render", AxisUpdatingHandler.onRender, &axisUpdatingHandler );
-    _ = try gtkzConnectHandler( glArea, "scroll-event", AxisUpdatingHandler.onMouseWheel, &axisUpdatingHandler );
+    var axisUpdatingHandler = AxisUpdatingHandler(2).init( axes, [_]u1 { 0, 1 } );
+    _ = try gtkzConnectHandler( glArea, "render", AxisUpdatingHandler(2).onRender, &axisUpdatingHandler );
+    _ = try gtkzConnectHandler( glArea, "scroll-event", AxisUpdatingHandler(2).onMouseWheel, &axisUpdatingHandler );
 
     const painters = [_]*Painter { &rootPaintable.painter };
     var paintingHandler = PaintingHandler.init( &painters );
     _ = try gtkzConnectHandler( glArea, "render", PaintingHandler.onRender, &paintingHandler );
     _ = try gtkzConnectHandler( window, "delete-event", PaintingHandler.onWindowClosing, &paintingHandler );
 
-    const draggers = [_]*Dragger { &axis.dragger };
+    var axisDraggable = AxisDraggable(2).init( axes, [_]u1 { 0, 1 } );
+    const draggers = [_]*Dragger { &axisDraggable.dragger };
     var draggingHandler = DraggingHandler.init( glArea, &draggers );
     _ = try gtkzConnectHandler( glArea, "button-press-event", DraggingHandler.onMouseDown, &draggingHandler );
     _ = try gtkzConnectHandler( glArea, "motion-notify-event", DraggingHandler.onMouseMove, &draggingHandler );

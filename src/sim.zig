@@ -121,7 +121,7 @@ pub fn runSimulation( control: *SimControl ) void {
 
             // Bail immediately in the common case with no bounce
             var hasBounce = false;
-            for ( xNext ) |xNext_i,i| {
+            for ( xNext ) |xNext_i, i| {
                 if ( xNext_i <= xMins[i] or xNext_i >= xMaxs[i] ) {
                     hasBounce = true;
                     break;
@@ -160,7 +160,7 @@ pub fn runSimulation( control: *SimControl ) void {
                 // Time of soonest bounce, and what to multiply each velocity coord by at that time
                 var tBounce = std.math.inf( f64 );
                 var vBounceFactor = [_]f64 { 1.0 } ** n;
-                for ( xNext ) |xNext_i,i| {
+                for ( xNext ) |xNext_i, i| {
                     var hasMinBounce = false;
                     var hasMaxBounce = false;
 
@@ -216,22 +216,22 @@ pub fn runSimulation( control: *SimControl ) void {
                     var aNext_ = [_]f64 { undefined } ** n;
                     var vNext_ = [_]f64 { undefined } ** n;
                     var xNext_ = [_]f64 { undefined } ** n;
-                    for ( vCurr ) |vCurr_i,i| {
+                    for ( vCurr ) |vCurr_i, i| {
                         vHalf[i] = vCurr_i + aCurr[i]*tHalf_;
                     }
-                    for ( xCurr ) |xCurr_i,i| {
+                    for ( xCurr ) |xCurr_i, i| {
                         xNext_[i] = xCurr_i + vHalf[i]*tFull_;
                     }
                     aNext_ = [_]f64 { 0.0 } ** n;
                     for ( accelerators ) |accelerator| {
                         accelerator.addAcceleration( dotIndex, mass, xNext_, &aNext_ );
                     }
-                    for ( vHalf ) |vHalf_i,i| {
+                    for ( vHalf ) |vHalf_i, i| {
                         vNext_[i] = vHalf_i + aNext_[i]*tHalf_;
                     }
 
                     aCurr = aNext_;
-                    for ( vNext_ ) |vNext_i,i| {
+                    for ( vNext_ ) |vNext_i, i| {
                         vCurr[i] = vBounceFactor[i] * vNext_i;
                     }
                     xCurr = xNext_;
@@ -241,17 +241,17 @@ pub fn runSimulation( control: *SimControl ) void {
                 {
                     var tFull_ = tFull - tBounce;
                     var tHalf_ = 0.5 * tFull_;
-                    for ( vCurr ) |vCurr_i,i| {
+                    for ( vCurr ) |vCurr_i, i| {
                         vHalf[i] = vCurr_i + aCurr[i]*tHalf_;
                     }
-                    for ( xCurr ) |xCurr_i,i| {
+                    for ( xCurr ) |xCurr_i, i| {
                         xNext[i] = xCurr_i + vHalf[i]*tFull_;
                     }
                     aNext.* = [_]f64 { 0.0 } ** n;
                     for ( accelerators ) |accelerator| {
                         accelerator.addAcceleration( dotIndex, mass, xNext.*, aNext );
                     }
-                    for ( vHalf ) |vHalf_i,i| {
+                    for ( vHalf ) |vHalf_i, i| {
                         vNext[i] = vHalf_i + aNext[i]*tHalf_;
                     }
                 }
@@ -288,7 +288,7 @@ const ConstantAcceleration = struct {
 
     fn addAcceleration( accelerator: *const Accelerator, dotIndex: usize, mass: f64, x: [2]f64, aSum_OUT: *[2]f64 ) void {
         const self = @fieldParentPtr( ConstantAcceleration, "accelerator", accelerator );
-        for ( self.acceleration ) |ai,i| {
+        for ( self.acceleration ) |ai, i| {
             aSum_OUT[ i ] += ai;
         }
     }
@@ -325,7 +325,7 @@ const SpringsAcceleration = struct {
 
                 var ds = [_]f64 { undefined } ** 2;
                 var dSquared = @as( f64, 0.0 );
-                for ( xOther ) |xOther_i,i| {
+                for ( xOther ) |xOther_i, i| {
                     const di = xOther_i - x[i];
                     ds[i] = di;
                     dSquared += di*di;
@@ -334,7 +334,7 @@ const SpringsAcceleration = struct {
 
                 const offsetFromRest = d - self.restLength;
                 const c2 = c1 * offsetFromRest / d;
-                for ( ds ) |di,i| {
+                for ( ds ) |di, i| {
                     // a = ( stiffness * offsetFromRest * di/d ) / mass
                     aSum_OUT[i] += c2 * di;
                 }

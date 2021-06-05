@@ -3,11 +3,10 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 usingnamespace @import( "util/axis.zig" );
 usingnamespace @import( "util/glz.zig" );
-usingnamespace @import( "util/misc.zig" );
 usingnamespace @import( "util/paint.zig" );
 
 pub const DotsPaintable = struct {
-    axis: *Axis2,
+    axes: [2]*const Axis,
 
     size_LPX: f64,
     rgba: [4]GLfloat,
@@ -21,9 +20,9 @@ pub const DotsPaintable = struct {
 
     painter: Painter,
 
-    pub fn init( name: []const u8, axis: *Axis2, allocator: *Allocator ) DotsPaintable {
+    pub fn init( name: []const u8, axes: [2]*const Axis, allocator: *Allocator ) DotsPaintable {
         return DotsPaintable {
-            .axis = axis,
+            .axes = axes,
 
             .size_LPX = 15,
             .rgba = [4]GLfloat { 1.0, 0.0, 0.0, 1.0 },
@@ -70,8 +69,8 @@ pub const DotsPaintable = struct {
         }
 
         if ( self.vCount > 0 ) {
-            const bounds = self.axis.getBounds( );
             const size_PX = @floatCast( f32, self.size_LPX * pc.lpxToPx );
+            const bounds = axisBounds( 2, self.axes );
 
             glzEnablePremultipliedAlphaBlending( );
 
@@ -112,7 +111,7 @@ const DotsProgram = struct {
         const vertSource =
             \\#version 150 core
             \\
-            \\vec2 min2D( vec4 interval2D )
+            \\vec2 start2D( vec4 interval2D )
             \\{
             \\    return interval2D.xy;
             \\}
@@ -124,7 +123,7 @@ const DotsProgram = struct {
             \\
             \\vec2 coordsToNdc2D( vec2 coords, vec4 bounds )
             \\{
-            \\    vec2 frac = ( coords - min2D( bounds ) ) / span2D( bounds );
+            \\    vec2 frac = ( coords - start2D( bounds ) ) / span2D( bounds );
             \\    return ( -1.0 + 2.0*frac );
             \\}
             \\

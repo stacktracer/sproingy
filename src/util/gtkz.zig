@@ -1,5 +1,4 @@
 const std = @import( "std" );
-usingnamespace @import( "misc.zig" );
 pub usingnamespace @import( "c.zig" );
 
 pub const GtkzError = error {
@@ -40,25 +39,28 @@ pub fn gtkzScaleFactor( widget: *GtkWidget ) f64 {
     return @intToFloat( f64, gtk_widget_get_scale_factor( widget ) );
 }
 
-pub fn gtkzMousePos_PX( widget: *GtkWidget, ev: anytype ) Vec2 {
+/// Y coord increases upward.
+pub fn gtkzMousePos_PX( widget: *GtkWidget, ev: anytype ) [2]f64 {
     // The event also knows what window and device it came from ...
     // but ultimately the mouse is interacting with the contents of
     // a widget, so it's the widget's scale factor (not the window's
     // or the device's) that we care about here
     const scale = gtkzScaleFactor( widget );
 
-    const xy_LPX = switch ( @TypeOf( ev ) ) {
-        *GdkEventMotion => xy( ev.x, ev.y ),
-        *GdkEventButton => xy( ev.x, ev.y ),
-        *GdkEventScroll => xy( ev.x, ev.y ),
+    const h_LPX = @intToFloat( f64, gtk_widget_get_allocated_height( widget ) );
+    const mouse_LPX = switch ( @TypeOf( ev ) ) {
+        *GdkEventMotion => [_]f64 { ev.x, h_LPX - ev.y },
+        *GdkEventButton => [_]f64 { ev.x, h_LPX - ev.y },
+        *GdkEventScroll => [_]f64 { ev.x, h_LPX - ev.y },
         else => @compileError( "Unsupported type: " ++ @typeName( @TypeOf( ev ) ) ),
     };
 
-    return Vec2 {
-        // Add 0.5 to get the center of a physical pixel
-        .x = scale*xy_LPX.x + 0.5,
-        .y = scale*xy_LPX.y + 0.5,
-    };
+    var mouse_PX = @as( [2]f64, undefined );
+    for ( mouse_LPX ) |coord_LPX, i| {
+        // Scale, then add 0.5 to get the center of a physical pixel
+        mouse_PX[i] = scale*coord_LPX + 0.5;
+    }
+    return mouse_PX;
 }
 
 pub fn gtkz_signal_connect( instance: gpointer, signalName: [*c]const gchar, handler: GCallback, userData: gpointer ) !gulong {

@@ -3,11 +3,11 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 usingnamespace @import( "gtkz.zig" );
 usingnamespace @import( "glz.zig" );
-usingnamespace @import( "misc.zig" );
 usingnamespace @import( "c.zig" );
+usingnamespace @import( "axis.zig" );
 
 pub const PainterContext = struct {
-    viewport_PX: Interval2,
+    viewport_PX: [2]Interval,
     lpxToPx: f64,
 };
 
