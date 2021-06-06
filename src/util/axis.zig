@@ -63,12 +63,16 @@ pub const Axis = struct {
     }
 
     pub fn span( self: *const Axis ) f64 {
+        return self.spanForScale( self.scale );
+    }
+
+    fn spanForScale( self: *const Axis, scale: f64 ) f64 {
         const size_PX = self.viewport_PX.span;
         if ( isNan( size_PX ) ) {
             return self.defaultSpan;
         }
         else {
-            return ( size_PX / self.scale );
+            return ( size_PX / scale );
         }
     }
 
@@ -80,7 +84,7 @@ pub const Axis = struct {
 
     pub fn set( self: *Axis, frac: f64, coord: f64, scale: f64 ) void {
         // TODO: Apply constraints
-        const span_ = self.span( );
+        const span_ = self.spanForScale( scale );
         self.tieCoord = coord + ( self.tieFrac - frac )*span_;
         self.scale = scale;
     }
