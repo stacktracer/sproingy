@@ -1,4 +1,6 @@
 const std = @import( "std" );
+const inf = std.math.inf;
+const min = std.math.min;
 const Mutex = std.Mutex;
 const Allocator = std.mem.Allocator;
 usingnamespace @import( "sim.zig" );
@@ -195,9 +197,18 @@ pub fn main( ) !void {
     defer args.deinit( );
     gtk_init( &args.argc, &args.argv );
 
-    var axis0 = Axis.init( Interval.init( 0, 480 ), 28.2 );
-    var axis1 = Axis.init( Interval.init( 0, 360 ), 28.2 );
+    var axis0 = Axis.init( -8.5, 8.5 );
+    var axis1 = Axis.init( -6.5, 6.5 );
     var axes = [_]*Axis { &axis0, &axis1 };
+
+    // TODO: Replace with aspect-ratio locking
+    var axesScale = inf( f64 );
+    for ( axes ) |axis| {
+        axesScale = min( axesScale, axis.scale );
+    }
+    for ( axes ) |axis| {
+        axis.scale = axesScale;
+    }
 
     var bgPaintable = ClearPaintable.init( "bg", GL_COLOR_BUFFER_BIT );
     bgPaintable.rgba = [_]GLfloat { 0.4, 0.4, 0.4, 1.0 };
@@ -217,7 +228,7 @@ pub fn main( ) !void {
 
     const glArea = gtk_gl_area_new( );
     gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
-    gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK );
+    gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_STRUCTURE_MASK );
     gtk_widget_set_can_focus( glArea, 1 );
 
     const window = gtk_window_new( .GTK_WINDOW_TOPLEVEL );
@@ -227,6 +238,11 @@ pub fn main( ) !void {
 
     var axisUpdatingHandler = AxisUpdatingHandler(2).init( axes, [_]u1 { 0, 1 } );
     _ = try gtkzConnectHandler( glArea, "render", AxisUpdatingHandler(2).onRender, &axisUpdatingHandler );
+    _ = try gtkzConnectHandler( glArea, "window-state-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
+    _ = try gtkzConnectHandler( glArea, "motion-notify-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
+    _ = try gtkzConnectHandler( glArea, "button-press-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
+    _ = try gtkzConnectHandler( glArea, "button-release-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
+    _ = try gtkzConnectHandler( glArea, "scroll-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
     _ = try gtkzConnectHandler( glArea, "scroll-event", AxisUpdatingHandler(2).onMouseWheel, &axisUpdatingHandler );
 
     const painters = [_]*Painter { &rootPaintable.painter };
