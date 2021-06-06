@@ -103,7 +103,7 @@ pub fn AxisDraggable( comptime n: usize ) type {
         const Self = @This();
 
         axes: [n]*Axis,
-        mouseCoordIndices: [n]u1,
+        screenCoordIndices: [n]u1,
         grabCoords: [n]f64,
 
         dragger: Dragger = .{
@@ -113,19 +113,18 @@ pub fn AxisDraggable( comptime n: usize ) type {
             .handleReleaseFn = handleRelease,
         },
 
-        pub fn init( axes: [n]*Axis, mouseCoordIndices: [n]u1 ) Self {
+        pub fn init( axes: [n]*Axis, screenCoordIndices: [n]u1 ) Self {
             return Self {
                 .axes = axes,
-                .mouseCoordIndices = mouseCoordIndices,
+                .screenCoordIndices = screenCoordIndices,
                 .grabCoords = undefined,
             };
         }
 
         fn canHandlePress( dragger: *Dragger, mouse_PX: [2]f64 ) bool {
             const self = @fieldParentPtr( Self, "dragger", dragger );
-            for ( self.mouseCoordIndices ) |m, i| {
-                const axis = self.axes[i];
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+            for ( self.axes ) |axis, i| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
                 if ( mouseFrac < 0.0 or mouseFrac > 1.0 ) {
                     return false;
                 }
@@ -135,27 +134,24 @@ pub fn AxisDraggable( comptime n: usize ) type {
 
         fn handlePress( dragger: *Dragger, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
-            for ( self.mouseCoordIndices ) |m, i| {
-                const axis = self.axes[i];
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+            for ( self.axes ) |axis, i| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
                 self.grabCoords[i] = axis.bounds( ).fracToValue( mouseFrac );
             }
         }
 
         fn handleDrag( dragger: *Dragger, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
-            for ( self.mouseCoordIndices ) |m, i| {
-                const axis = self.axes[i];
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+            for ( self.axes ) |axis, i| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
                 axis.set( mouseFrac, self.grabCoords[i], axis.scale );
             }
         }
 
         fn handleRelease( dragger: *Dragger, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
-            for ( self.mouseCoordIndices ) |m, i| {
-                const axis = self.axes[i];
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+            for ( self.axes ) |axis, i| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
                 axis.set( mouseFrac, self.grabCoords[i], axis.scale );
             }
         }
@@ -167,7 +163,7 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
         const Self = @This();
 
         axes: [n]*Axis,
-        mouseCoordIndices: [n]u1,
+        screenCoordIndices: [n]u1,
 
         // Axis scales and viewport sizes from the most recent time
         // one of their scales was explicitly changed; used below
@@ -179,10 +175,10 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
         // Axis scales, explicit or not, from the most recent render
         scalesFromLastRender: [n]f64,
 
-        pub fn init( axes: [n]*Axis, mouseCoordIndices: [n]u1 ) Self {
+        pub fn init( axes: [n]*Axis, screenCoordIndices: [n]u1 ) Self {
             return Self {
                 .axes = axes,
-                .mouseCoordIndices = mouseCoordIndices,
+                .screenCoordIndices = screenCoordIndices,
                 .sizesFromLastRealRescale_PX = axisSizes_PX( axes ),
                 .scalesFromLastRealRescale = axisScales( axes ),
                 .scalesFromLastRender = axisScales( axes ),
@@ -191,9 +187,8 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
 
         pub fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, self: *Self ) callconv(.C) gboolean {
             const viewport_PX = glzGetViewport_PX( );
-            for ( self.mouseCoordIndices ) |m, i| {
-                const axis = self.axes[i];
-                axis.viewport_PX = viewport_PX[m];
+            for ( self.axes ) |axis, i| {
+                axis.viewport_PX = viewport_PX[ self.screenCoordIndices[i] ];
             }
 
             var isRealRescale = false;
@@ -262,9 +257,8 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
             const zoomSteps = glzWheelSteps( ev );
             const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
             const mouse_PX = gtkzMousePos_PX( widget, ev );
-            for ( self.mouseCoordIndices ) |m, i| {
-                const axis = self.axes[i];
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[m] );
+            for ( self.axes ) |axis, i| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
                 const mouseCoord = axis.bounds( ).fracToValue( mouseFrac );
                 const scale = zoomFactor*axis.scale;
                 axis.set( mouseFrac, mouseCoord, scale );
