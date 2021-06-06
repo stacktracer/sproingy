@@ -2,6 +2,7 @@ const std = @import( "std" );
 const min = std.math.min;
 const pow = std.math.pow;
 const inf = std.math.inf;
+const nan = std.math.nan;
 usingnamespace @import( "gtkz.zig" );
 usingnamespace @import( "glz.zig" );
 usingnamespace @import( "drag.zig" );
@@ -40,15 +41,14 @@ pub const Axis = struct {
     tieCoord: f64,
     scale: f64,
 
-    pub fn init( start: f64, end: f64 ) Axis {
-        const viewport_PX = Interval.init( 0, 1000 );
+    pub fn init( start: f64, end: f64, size_PX: f64 ) Axis {
         const span = end - start;
         const tieFrac = 0.5;
         return Axis {
-            .viewport_PX = viewport_PX,
+            .viewport_PX = Interval.init( 0, size_PX ),
             .tieFrac = tieFrac,
             .tieCoord = start + tieFrac*span,
-            .scale = viewport_PX.span / span,
+            .scale = size_PX / span,
         };
     }
 
@@ -145,20 +145,62 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
         axes: [n]*Axis,
         mouseCoordIndices: [n]u1,
 
-        // Axis scales and viewport sizes from the last time we're
-        // sure there wasn't a viewport resize in progress
-        sizesBeforeResize_PX: [n]f64,
-        scalesBeforeResize: [n]f64,
-        resizeInProgress: bool,
+        // Axis scales and viewport sizes from the most recent time
+        // one of their scales was explicitly changed; used below
+        // to implicitly rescale when widget size or hidpi scaling
+        // changes
+        sizesFromLastRealRescale_PX: [n]f64,
+        scalesFromLastRealRescale: [n]f64,
 
-        pub fn init( axes: [n]*Axis, mouseCoordIndices: [n]u1 ) Self {
+        // Axis scales, explicit or not, from the most recent render
+        scalesFromLastRender: [n]f64,
+
+        pub fn init( axes: [n]*Axis, mouseCoordIndices: [n]u1, forceRescale: bool ) Self {
             return Self {
                 .axes = axes,
                 .mouseCoordIndices = mouseCoordIndices,
-                .sizesBeforeResize_PX = axisSizes_PX( axes ),
-                .scalesBeforeResize = axisScales( axes ),
-                .resizeInProgress = false,
+                .sizesFromLastRealRescale_PX = axisSizes_PX( axes ),
+                .scalesFromLastRealRescale = axisScales( axes ),
+                .scalesFromLastRender = if ( forceRescale ) [1]f64 { nan( f64 ) } ** n else axisScales( axes ),
             };
+        }
+
+        pub fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, self: *Self ) callconv(.C) gboolean {
+            const viewport_PX = glzGetViewport_PX( );
+            for ( self.mouseCoordIndices ) |m, i| {
+                const axis = self.axes[i];
+                axis.viewport_PX = viewport_PX[m];
+            }
+
+            var isRealRescale = false;
+            for ( self.axes ) |axis, i| {
+                if ( axis.scale != self.scalesFromLastRender[i] ) {
+                    isRealRescale = true;
+                    break;
+                }
+            }
+
+            if ( isRealRescale ) {
+                self.sizesFromLastRealRescale_PX = axisSizes_PX( self.axes );
+                self.scalesFromLastRealRescale = axisScales( self.axes );
+            }
+            else {
+                // Auto-adjust axis *scales* so that the axis *bounds* stay as
+                // close as possible to what they were the last time there was
+                // a "real" scale change
+                var autoRescaleFactor = inf( f64 );
+                for ( self.axes ) |axis, i| {
+                    const maxRescaleFactor = axis.viewport_PX.span / self.sizesFromLastRealRescale_PX[i];
+                    autoRescaleFactor = min( autoRescaleFactor, maxRescaleFactor );
+                }
+                for ( self.axes ) |axis, i| {
+                    axis.scale = autoRescaleFactor * self.scalesFromLastRealRescale[i];
+                }
+            }
+
+            self.scalesFromLastRender = axisScales( self.axes );
+
+            return 0;
         }
 
         fn axisSizes_PX( axes: [n]*const Axis ) [n]f64 {
@@ -175,50 +217,6 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
                 scales[i] = axis.scale;
             }
             return scales;
-        }
-
-        pub fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, self: *Self ) callconv(.C) gboolean {
-            const viewport_PX = glzGetViewport_PX( );
-            for ( self.mouseCoordIndices ) |m, i| {
-                const axis = self.axes[i];
-                axis.viewport_PX = viewport_PX[m];
-            }
-
-            // If we're not already in the midst of a resize, check whether
-            // one has started since the last render
-            if ( !self.resizeInProgress ) {
-                for ( self.axes ) |axis, i| {
-                    if ( axis.viewport_PX.span != self.sizesBeforeResize_PX[i] ) {
-                        self.resizeInProgress = true;
-                        break;
-                    }
-                }
-            }
-
-            // If the axis viewports are changing size (due to a widget resize
-            // or a hidpi scaling change), adjust the axis *scales* so that the
-            // axis *bounds* stay as close as possible to what they were before
-            // the resize started (assumes there won't be legit scale changes
-            // during a viewport resize, which is a pretty safe assumption)
-            if ( self.resizeInProgress ) {
-                var rescaleFactor = inf( f64 );
-                for ( self.axes ) |axis, i| {
-                    const prefRescaleFactor = axis.viewport_PX.span / self.sizesBeforeResize_PX[i];
-                    rescaleFactor = min( rescaleFactor, prefRescaleFactor );
-                }
-                for ( self.axes ) |axis, i| {
-                    axis.scale = rescaleFactor * self.scalesBeforeResize[i];
-                }
-            }
-
-            return 0;
-        }
-
-        pub fn onNotResizing( widget: *GtkWidget, ev: *GdkEvent, self: *Self ) callconv(.C) gboolean {
-            self.sizesBeforeResize_PX = axisSizes_PX( self.axes );
-            self.scalesBeforeResize = axisScales( self.axes );
-            self.resizeInProgress = false;
-            return 0;
         }
 
         pub fn onMouseWheel( widget: *GtkWidget, ev: *GdkEventScroll, self: *Self ) callconv(.C) gboolean {

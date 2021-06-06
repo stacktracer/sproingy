@@ -197,8 +197,19 @@ pub fn main( ) !void {
     defer args.deinit( );
     gtk_init( &args.argc, &args.argv );
 
-    var axis0 = Axis.init( -8.5, 8.5 );
-    var axis1 = Axis.init( -6.5, 6.5 );
+    const glArea = gtk_gl_area_new( );
+    gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
+    gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK );
+    gtk_widget_set_can_focus( glArea, 1 );
+
+    const window = gtk_window_new( .GTK_WINDOW_TOPLEVEL );
+    gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
+    gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
+    gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
+
+    const scaleFactor = gtkzScaleFactor( glArea );
+    var axis0 = Axis.init( -8.4, 8.4, 480*scaleFactor );
+    var axis1 = Axis.init( -6.4, 6.4, 360*scaleFactor );
     var axes = [_]*Axis { &axis0, &axis1 };
 
     // TODO: Replace with aspect-ratio locking
@@ -226,23 +237,8 @@ pub fn main( ) !void {
     try rootPaintable.childPainters.append( &boxPaintable.painter );
     try rootPaintable.childPainters.append( &dotsPaintable.painter );
 
-    const glArea = gtk_gl_area_new( );
-    gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glArea ), 3, 2 );
-    gtk_widget_set_events( glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK | GDK_STRUCTURE_MASK );
-    gtk_widget_set_can_focus( glArea, 1 );
-
-    const window = gtk_window_new( .GTK_WINDOW_TOPLEVEL );
-    gtk_container_add( @ptrCast( *GtkContainer, window ), glArea );
-    gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
-    gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
-
-    var axisUpdatingHandler = AxisUpdatingHandler(2).init( axes, [_]u1 { 0, 1 } );
+    var axisUpdatingHandler = AxisUpdatingHandler(2).init( axes, [_]u1 { 0, 1 }, true );
     _ = try gtkzConnectHandler( glArea, "render", AxisUpdatingHandler(2).onRender, &axisUpdatingHandler );
-    _ = try gtkzConnectHandler( glArea, "window-state-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
-    _ = try gtkzConnectHandler( glArea, "motion-notify-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
-    _ = try gtkzConnectHandler( glArea, "button-press-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
-    _ = try gtkzConnectHandler( glArea, "button-release-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
-    _ = try gtkzConnectHandler( glArea, "scroll-event", AxisUpdatingHandler(2).onNotResizing, &axisUpdatingHandler );
     _ = try gtkzConnectHandler( glArea, "scroll-event", AxisUpdatingHandler(2).onMouseWheel, &axisUpdatingHandler );
 
     const painters = [_]*Painter { &rootPaintable.painter };
