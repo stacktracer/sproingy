@@ -13,6 +13,7 @@ pub const ProcessArgs = struct {
         var it = std.process.args( );
         defer it.deinit( );
 
+        // TODO: Probably need some errdefer lines here
         var args = ArrayList( [:0]u8 ).init( allocator );
         var argsAsCstrs = ArrayList( [*c]u8 ).init( allocator );
         while ( true ) {
