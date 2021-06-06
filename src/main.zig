@@ -207,8 +207,8 @@ pub fn main( ) !void {
     gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
     gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
 
-    var axis0 = Axis.init( -8.4, 8.4, 480 );
-    var axis1 = Axis.init( -6.4, 6.4, 360 );
+    var axis0 = Axis.initBounds( -8.4, 8.4, 1 );
+    var axis1 = Axis.initBounds( -6.4, 6.4, 1 );
     var axes = [_]*Axis { &axis0, &axis1 };
 
     // TODO: Replace with aspect-ratio locking
@@ -236,7 +236,7 @@ pub fn main( ) !void {
     try rootPaintable.childPainters.append( &boxPaintable.painter );
     try rootPaintable.childPainters.append( &dotsPaintable.painter );
 
-    var axisUpdatingHandler = AxisUpdatingHandler(2).init( axes, [_]u1 { 0, 1 }, false );
+    var axisUpdatingHandler = AxisUpdatingHandler(2).init( axes, [_]u1 { 0, 1 } );
     _ = try gtkzConnectHandler( glArea, "render", AxisUpdatingHandler(2).onRender, &axisUpdatingHandler );
     _ = try gtkzConnectHandler( glArea, "scroll-event", AxisUpdatingHandler(2).onMouseWheel, &axisUpdatingHandler );
 

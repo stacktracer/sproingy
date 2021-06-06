@@ -3,6 +3,7 @@ const min = std.math.min;
 const pow = std.math.pow;
 const inf = std.math.inf;
 const nan = std.math.nan;
+const isNan = std.math.isNan;
 usingnamespace @import( "gtkz.zig" );
 usingnamespace @import( "glz.zig" );
 usingnamespace @import( "drag.zig" );
@@ -36,32 +37,51 @@ pub const Interval = struct {
 };
 
 pub const Axis = struct {
-    viewport_PX: Interval,
     tieFrac: f64,
     tieCoord: f64,
     scale: f64,
 
-    pub fn init( start: f64, end: f64, size_PX: f64 ) Axis {
-        const span = end - start;
+    /// Size may be Nan if this axis isn't visible yet!
+    viewport_PX: Interval,
+
+    /// If size is Nan, this will be used instead.
+    defaultSpan: f64,
+
+    /// If this axis will be managed by an AxisUpdatingHandler, the
+    /// absolute value of initialScale doesn't matter. What matters
+    /// is the ratio of initialScale to the initialScales of other
+    /// axes managed by the same AxisUpdatingHandler.
+    pub fn initBounds( start: f64, end: f64, initialScale: f64 ) Axis {
         const tieFrac = 0.5;
         return Axis {
-            .viewport_PX = Interval.init( 0, size_PX ),
             .tieFrac = tieFrac,
-            .tieCoord = start + tieFrac*span,
-            .scale = size_PX / span,
+            .tieCoord = start + tieFrac*( end - start ),
+            .scale = initialScale,
+            .viewport_PX = Interval.init( 0, nan( f64 ) ),
+            .defaultSpan = end - start,
         };
     }
 
+    pub fn span( self: *const Axis ) f64 {
+        const size_PX = self.viewport_PX.span;
+        if ( isNan( size_PX ) ) {
+            return self.defaultSpan;
+        }
+        else {
+            return ( size_PX / self.scale );
+        }
+    }
+
     pub fn bounds( self: *const Axis ) Interval {
-        const span = self.viewport_PX.span / self.scale;
-        const start = self.tieCoord - self.tieFrac*span;
-        return Interval.init( start, span );
+        const span_ = self.span( );
+        const start = self.tieCoord - self.tieFrac*span_;
+        return Interval.init( start, span_ );
     }
 
     pub fn set( self: *Axis, frac: f64, coord: f64, scale: f64 ) void {
         // TODO: Apply constraints
-        const span = self.viewport_PX.span / scale;
-        self.tieCoord = coord + ( self.tieFrac - frac )*span;
+        const span_ = self.span( );
+        self.tieCoord = coord + ( self.tieFrac - frac )*span_;
         self.scale = scale;
     }
 };
@@ -155,13 +175,13 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
         // Axis scales, explicit or not, from the most recent render
         scalesFromLastRender: [n]f64,
 
-        pub fn init( axes: [n]*Axis, mouseCoordIndices: [n]u1, forceRescale: bool ) Self {
+        pub fn init( axes: [n]*Axis, mouseCoordIndices: [n]u1 ) Self {
             return Self {
                 .axes = axes,
                 .mouseCoordIndices = mouseCoordIndices,
                 .sizesFromLastRealRescale_PX = axisSizes_PX( axes ),
                 .scalesFromLastRealRescale = axisScales( axes ),
-                .scalesFromLastRender = if ( forceRescale ) [1]f64 { nan( f64 ) } ** n else axisScales( axes ),
+                .scalesFromLastRender = axisScales( axes ),
             };
         }
 
@@ -190,9 +210,23 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
                 // a "real" scale change
                 var autoRescaleFactor = inf( f64 );
                 for ( self.axes ) |axis, i| {
+                    // If this is the first time this axis has had a valid size,
+                    // init its sizeFromLastRealRescale based on its defaultSpan
+                    if ( isNan( self.sizesFromLastRealRescale_PX[i] ) ) {
+                        const initialRescaleFactor = axis.span( ) / axis.defaultSpan;
+                        self.sizesFromLastRealRescale_PX[i] = axis.viewport_PX.span / initialRescaleFactor;
+                    }
+
+                    // The highest factor we can multiply this axis scale by
+                    // and still keep its previous bounds within its viewport
                     const maxRescaleFactor = axis.viewport_PX.span / self.sizesFromLastRealRescale_PX[i];
+
+                    // We will rescale all axes by a single factor that keeps
+                    // all their previous bounds within their viewports
                     autoRescaleFactor = min( autoRescaleFactor, maxRescaleFactor );
                 }
+
+                // Rescale all axes by a single factor
                 for ( self.axes ) |axis, i| {
                     axis.scale = autoRescaleFactor * self.scalesFromLastRealRescale[i];
                 }
