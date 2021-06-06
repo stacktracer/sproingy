@@ -97,7 +97,6 @@ const SimControlImpl = struct {
 
     /// Called on any thread
     pub fn stopRunning( self: *SimControlImpl ) void {
-        // TODO: What do the AtomicOrder values mean?
         @atomicStore( bool, &self._keepRunning, false, .SeqCst );
     }
 
