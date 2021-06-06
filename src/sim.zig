@@ -28,7 +28,7 @@ pub const SimControl = struct {
 };
 
 /// Caller must ensure that control exists until after this fn returns.
-pub fn runSimulation( control: *SimControl ) void {
+pub fn runSimulation( control: *SimControl ) !void {
     // Coords per dot
     comptime const n = 2;
 
@@ -45,7 +45,7 @@ pub fn runSimulation( control: *SimControl ) void {
 
     // Send box coords to the UI
     var boxCoords = [_]f64 { xMins[0],xMaxs[1], xMins[0],xMins[1], xMaxs[0],xMaxs[1], xMaxs[0],xMins[1] };
-    control.setBox( &boxCoords ) catch @panic( "" ); // FIXME
+    try control.setBox( &boxCoords );
 
     // Pre-compute the first coord index of each dot, for easy iteration later
     var dotFirstCoordIndices = [_]usize { undefined } ** dotCount; {
@@ -91,7 +91,7 @@ pub fn runSimulation( control: *SimControl ) void {
         // Send dot coords to the listener periodically
         const now_PMILLIS = milliTimestamp( );
         if ( now_PMILLIS >= nextUpdate_PMILLIS ) {
-            control.setDots( xsCurr ) catch @panic( "" ); // FIXME
+            try control.setDots( xsCurr );
             nextUpdate_PMILLIS = now_PMILLIS + updateInterval_MILLIS;
         }
 
