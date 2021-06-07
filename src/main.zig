@@ -13,47 +13,39 @@ usingnamespace @import( "util/paint.zig" );
 usingnamespace @import( "drawarrays.zig" );
 usingnamespace @import( "dots.zig" );
 
-const SimControlImpl = struct {
+// TODO: Understand why this magic makes async/await work sensibly
+pub const io_mode = .evented;
+
+const SimListenerImpl = struct {
     // Thread-safe
     allocator: *Allocator,
 
-    // Accessed atomically
-    _keepRunning: bool = true,
-    _updateInterval_MILLIS: i64 = 15,
-
     // Accessed only on GTK thread
-    boxPaintable: *DrawArraysPaintable,
-    dotsPaintable: *DotsPaintable,
+    paintable: *DotsPaintable,
     glArea: *GtkWidget,
 
     // Protected by mutex
     mutex: Mutex = Mutex {},
-    pendingBoxCoords: ?[]GLfloat = null,
-    pendingDotCoords: ?[]GLfloat = null,
+    pendingCoords: ?[]GLfloat = null,
 
-    simControl: SimControl = SimControl {
-        .setBoxFn = setBox,
-        .keepRunningFn = keepRunning,
-        .getUpdateIntervalFn_MILLIS = getUpdateInterval_MILLIS,
-        .setDotsFn = setDots,
+    listener: SimListener = SimListener {
+        .setParticleCoordsFn = setParticleCoords,
     },
 
     /// Called on simulator thread
-    fn setBox( simControl: *SimControl, boxCoords: []const f64 ) !void {
-        const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
+    fn setParticleCoords( listener: *SimListener, xs: []const f64 ) !void {
+        const self = @fieldParentPtr( SimListenerImpl, "listener", listener );
 
-        // TODO: Most of this method can probably be pulled out into a standalone fn
-
-        var newCoords = try self.allocator.alloc( GLfloat, boxCoords.len );
-        for ( boxCoords ) |coord, i| {
-            newCoords[i] = @floatCast( GLfloat, coord );
+        var newCoords = try self.allocator.alloc( GLfloat, xs.len );
+        for ( xs ) |x, c| {
+            newCoords[c] = @floatCast( GLfloat, x );
         }
 
         var oldCoords = sync: {
             const held = self.mutex.acquire( );
             defer held.release( );
-            var oldCoords = self.pendingBoxCoords;
-            self.pendingBoxCoords = newCoords;
+            var oldCoords = self.pendingCoords;
+            self.pendingCoords = newCoords;
             break :sync oldCoords;
         };
 
@@ -68,98 +60,21 @@ const SimControlImpl = struct {
         // the queue indefinitely, which feels sloppy ... however, calling
         // g_source_remove() later is no good, because the callback might
         // already have run (and removed itself by returning REMOVE)
-        _ = g_timeout_add( 0, @ptrCast( GSourceFunc, doUpdateBox ), self );
+        _ = g_timeout_add( 0, @ptrCast( GSourceFunc, updatePaintable ), self );
     }
 
     /// Called on GTK thread
-    fn doUpdateBox( self_: *SimControlImpl ) callconv(.C) guint {
+    fn updatePaintable( self_: *SimListenerImpl ) callconv(.C) guint {
         struct {
-            fn run( self: *SimControlImpl ) !void {
+            fn run( self: *SimListenerImpl ) !void {
                 const held = self.mutex.acquire( );
                 defer held.release( );
-                if ( self.pendingBoxCoords != null ) {
-                    const pendingCoords = self.pendingBoxCoords.?;
-                    defer self.pendingBoxCoords = null;
-                    try self.boxPaintable.coords.resize( pendingCoords.len );
-                    try self.boxPaintable.coords.replaceRange( 0, pendingCoords.len, pendingCoords );
-                    self.boxPaintable.coordsModified = true;
-                }
-                gtk_widget_queue_draw( self.glArea );
-            }
-        }.run( self_ ) catch |e| {
-            std.debug.warn( "Failed to update box: {}\n", .{ e } );
-            if ( @errorReturnTrace( ) ) |trace| {
-                std.debug.dumpStackTrace( trace.* );
-            }
-        };
-        return G_SOURCE_REMOVE;
-    }
-
-    /// Called on any thread
-    pub fn stopRunning( self: *SimControlImpl ) void {
-        @atomicStore( bool, &self._keepRunning, false, .SeqCst );
-    }
-
-    /// Called on any thread
-    pub fn setUpdateInterval_MILLIS( self: *SimControlImpl, updateInterval_MILLIS: i64 ) void {
-        @atomicStore( i64, &self._updateInterval_MILLIS, updateInterval_MILLIS, .SeqCst );
-    }
-
-    /// Called on simulator thread
-    fn keepRunning( simControl: *SimControl ) bool {
-        const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
-        return @atomicLoad( bool, &self._keepRunning, .SeqCst );
-    }
-
-    /// Called on simulator thread
-    fn getUpdateInterval_MILLIS( simControl: *SimControl ) i64 {
-        const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
-        return @atomicLoad( i64, &self._updateInterval_MILLIS, .SeqCst );
-    }
-
-    /// Called on simulator thread
-    fn setDots( simControl: *SimControl, dotCoords: []const f64 ) !void {
-        const self = @fieldParentPtr( SimControlImpl, "simControl", simControl );
-
-        var newCoords = try self.allocator.alloc( GLfloat, dotCoords.len );
-        for ( dotCoords ) |coord, i| {
-            newCoords[i] = @floatCast( GLfloat, coord );
-        }
-
-        var oldCoords = sync: {
-            const held = self.mutex.acquire( );
-            defer held.release( );
-            var oldCoords = self.pendingDotCoords;
-            self.pendingDotCoords = newCoords;
-            break :sync oldCoords;
-        };
-
-        if ( oldCoords != null ) {
-            // We could recycle old coord slices, but it would require either
-            // moving the copy loop inside the mutex block, or complicating
-            // the mutex patern ... neither of which seems worth the trouble
-            self.allocator.free( oldCoords.? );
-        }
-
-        // We never call g_source_remove(), so the callback could stay in
-        // the queue indefinitely, which feels sloppy ... however, calling
-        // g_source_remove() later is no good, because the callback might
-        // already have run (and removed itself by returning REMOVE)
-        _ = g_timeout_add( 0, @ptrCast( GSourceFunc, doUpdateDots ), self );
-    }
-
-    /// Called on GTK thread
-    fn doUpdateDots( self_: *SimControlImpl ) callconv(.C) guint {
-        struct {
-            fn run( self: *SimControlImpl ) !void {
-                const held = self.mutex.acquire( );
-                defer held.release( );
-                if ( self.pendingDotCoords != null ) {
-                    const pendingCoords = self.pendingDotCoords.?;
-                    defer self.pendingDotCoords = null;
-                    try self.dotsPaintable.coords.resize( pendingCoords.len );
-                    try self.dotsPaintable.coords.replaceRange( 0, pendingCoords.len, pendingCoords );
-                    self.dotsPaintable.coordsModified = true;
+                if ( self.pendingCoords != null ) {
+                    const newCoords = self.pendingCoords.?;
+                    defer self.pendingCoords = null;
+                    try self.paintable.coords.resize( newCoords.len );
+                    try self.paintable.coords.replaceRange( 0, newCoords.len, newCoords );
+                    self.paintable.coordsModified = true;
                 }
                 gtk_widget_queue_draw( self.glArea );
             }
@@ -173,12 +88,12 @@ const SimControlImpl = struct {
     }
 
     /// Called on GTK thread, after simulator thread has exited
-    pub fn deinit( self: *SimControlImpl ) void {
+    pub fn deinit( self: *SimListenerImpl ) void {
         var oldCoords = sync: {
             const held = self.mutex.acquire( );
             defer held.release( );
-            var oldCoords = self.pendingBoxCoords;
-            self.pendingBoxCoords = null;
+            var oldCoords = self.pendingCoords;
+            self.pendingCoords = null;
             break :sync oldCoords;
         };
 
@@ -191,6 +106,22 @@ const SimControlImpl = struct {
 pub fn main( ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
     const allocator = &gpa.allocator;
+
+    const N = 2;
+    const P = 3;
+    const simConfig = SimConfig( N, P ) {
+        .updateInterval_MILLIS = 15,
+        .timestep = 500e-9,
+        .xLimits = [N]Interval {
+            Interval.initStartEnd( -8, 8 ),
+            Interval.initStartEnd( -6, 6 ),
+        },
+        .particles = [P]Particle(N) {
+            Particle(N).init( 1, [N]f64{ -6.0, -3.0 }, [N]f64{ 7.0, 13.0 } ),
+            Particle(N).init( 1, [N]f64{ -6.5, -3.0 }, [N]f64{ 2.0, 14.0 } ),
+            Particle(N).init( 1, [N]f64{ -6.1, -3.2 }, [N]f64{ 5.0,  6.0 } ),
+        },
+    };
 
     var args = try ProcessArgs.init( allocator );
     defer args.deinit( );
@@ -208,7 +139,7 @@ pub fn main( ) !void {
 
     var axis0 = Axis.initBounds( -8.4, 8.4, 1 );
     var axis1 = Axis.initBounds( -6.4, 6.4, 1 );
-    var axes = [_]*Axis { &axis0, &axis1 };
+    var axes = [N]*Axis { &axis0, &axis1 };
 
     // TODO: Replace with aspect-ratio locking
     var axesScale = inf( f64 );
@@ -225,6 +156,12 @@ pub fn main( ) !void {
     var boxPaintable = DrawArraysPaintable.init( "box", axes, GL_TRIANGLE_STRIP, allocator );
     defer boxPaintable.deinit( );
     boxPaintable.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
+    const xMin0 = @floatCast( GLfloat, simConfig.xLimits[0].lowerBound( ).coord );
+    const xMax0 = @floatCast( GLfloat, simConfig.xLimits[0].upperBound( ).coord );
+    const xMin1 = @floatCast( GLfloat, simConfig.xLimits[1].lowerBound( ).coord );
+    const xMax1 = @floatCast( GLfloat, simConfig.xLimits[1].upperBound( ).coord );
+    var boxCoords = [_]GLfloat { xMin0,xMax1, xMin0,xMin1, xMax0,xMax1, xMax0,xMin1 };
+    try boxPaintable.coords.appendSlice( &boxCoords );
 
     var dotsPaintable = DotsPaintable.init( "dots", axes, allocator );
     defer dotsPaintable.deinit( );
@@ -235,7 +172,7 @@ pub fn main( ) !void {
     try rootPaintable.childPainters.append( &boxPaintable.painter );
     try rootPaintable.childPainters.append( &dotsPaintable.painter );
 
-    var axisUpdatingHandler = AxisUpdatingHandler(2).init( axes, [_]u1 { 0, 1 } );
+    var axisUpdatingHandler = AxisUpdatingHandler(N).init( axes, [N]u1 { 0, 1 } );
     _ = try gtkzConnectHandler( glArea, "render", AxisUpdatingHandler(2).onRender, &axisUpdatingHandler );
     _ = try gtkzConnectHandler( glArea, "scroll-event", AxisUpdatingHandler(2).onMouseWheel, &axisUpdatingHandler );
 
@@ -244,7 +181,7 @@ pub fn main( ) !void {
     _ = try gtkzConnectHandler( glArea, "render", PaintingHandler.onRender, &paintingHandler );
     _ = try gtkzConnectHandler( window, "delete-event", PaintingHandler.onWindowClosing, &paintingHandler );
 
-    var axisDraggable = AxisDraggable(2).init( axes, [_]u1 { 0, 1 } );
+    var axisDraggable = AxisDraggable(N).init( axes, [N]u1 { 0, 1 } );
     const draggers = [_]*Dragger { &axisDraggable.dragger };
     var draggingHandler = DraggingHandler.init( glArea, &draggers );
     _ = try gtkzConnectHandler( glArea, "button-press-event", DraggingHandler.onMouseDown, &draggingHandler );
@@ -258,20 +195,20 @@ pub fn main( ) !void {
     var quittingHandler = QuittingHandler.init( );
     _ = try gtkzConnectHandler( window, "delete-event", QuittingHandler.onWindowClosing, &quittingHandler );
 
-    var simControlImpl = SimControlImpl {
+    var simListener = SimListenerImpl {
         .allocator = allocator,
-        .boxPaintable = &boxPaintable,
-        .dotsPaintable = &dotsPaintable,
+        .paintable = &dotsPaintable,
         .glArea = glArea,
     };
-    simControlImpl.setUpdateInterval_MILLIS( 15 );
-    defer simControlImpl.deinit( );
-    const simThread = try std.Thread.spawn( &simControlImpl.simControl, runSimulation );
+    defer simListener.deinit( );
+
+    var simRunning = Atomic( bool ).init( true );
+    var simFrame = async runSimulation( N, P, &simConfig, &simListener.listener, &simRunning );
 
     gtk_widget_show_all( window );
     gtk_main( );
 
     // Main-thread stack needs to stay valid until sim-thread exits
-    simControlImpl.stopRunning( );
-    simThread.wait( );
+    simRunning.set( false );
+    try await simFrame;
 }

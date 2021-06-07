@@ -2,6 +2,26 @@ const std = @import( "std" );
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
+pub fn Atomic( comptime T: type ) type {
+    return struct {
+        _value: T,
+
+        pub fn init( value: T ) @This() {
+            return .{
+                ._value = value,
+            };
+        }
+
+        pub fn get( self: *const @This() ) T {
+            return @atomicLoad( T, &self._value, .SeqCst );
+        }
+
+        pub fn set( self: *@This(), value: T ) void {
+            @atomicStore( T, &self._value, value, .SeqCst );
+        }
+    };
+}
+
 pub const ProcessArgs = struct {
     allocator: *Allocator,
     args: ArrayList( [:0]u8 ),

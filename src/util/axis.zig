@@ -8,6 +8,18 @@ usingnamespace @import( "gtkz.zig" );
 usingnamespace @import( "glz.zig" );
 usingnamespace @import( "drag.zig" );
 
+pub const Bound = struct {
+    coord: f64,
+    inclusive: bool,
+
+    pub fn init( coord: f64, inclusive: bool ) Bound {
+        return Bound {
+            .coord = coord,
+            .inclusive = inclusive,
+        };
+    }
+};
+
 pub const Interval = struct {
     /// Inclusive start point.
     start: f64,
@@ -22,6 +34,10 @@ pub const Interval = struct {
         };
     }
 
+    pub fn initStartEnd( start: f64, end_: f64 ) Interval {
+        return init( start, end_ - start );
+    }
+
     pub fn set( self: *Interval, start: f64, span: f64 ) void {
         self.start = start;
         self.span = span;
@@ -33,6 +49,29 @@ pub const Interval = struct {
 
     pub fn fracToValue( self: *const Interval, frac: f64 ) f64 {
         return ( self.start + frac*self.span );
+    }
+
+    /// Exclusive.
+    pub fn end( self: *const Interval ) f64 {
+        return ( self.start + self.span );
+    }
+
+    pub fn lowerBound( self: *const Interval ) Bound {
+        if ( self.span >= 0 ) {
+            return Bound.init( self.start, true );
+        }
+        else {
+            return Bound.init( self.end( ), false );
+        }
+    }
+
+    pub fn upperBound( self: *const Interval ) Bound {
+        if ( self.span >= 0 ) {
+            return Bound.init( self.end( ), false );
+        }
+        else {
+            return Bound.init( self.start, true );
+        }
     }
 };
 
@@ -90,21 +129,21 @@ pub const Axis = struct {
     }
 };
 
-pub fn axisBounds( comptime n: usize, axes: [n]*const Axis ) [n]Interval {
-    var bounds = @as( [n]Interval, undefined );
-    for ( axes ) |axis, i| {
-        bounds[i] = axis.bounds( );
+pub fn axisBounds( comptime N: usize, axes: [N]*const Axis ) [N]Interval {
+    var bounds = @as( [N]Interval, undefined );
+    for ( axes ) |axis, n| {
+        bounds[n] = axis.bounds( );
     }
     return bounds;
 }
 
-pub fn AxisDraggable( comptime n: usize ) type {
+pub fn AxisDraggable( comptime N: usize ) type {
     return struct {
         const Self = @This();
 
-        axes: [n]*Axis,
-        screenCoordIndices: [n]u1,
-        grabCoords: [n]f64,
+        axes: [N]*Axis,
+        screenCoordIndices: [N]u1,
+        grabCoords: [N]f64,
 
         dragger: Dragger = .{
             .canHandlePressFn = canHandlePress,
@@ -113,7 +152,7 @@ pub fn AxisDraggable( comptime n: usize ) type {
             .handleReleaseFn = handleRelease,
         },
 
-        pub fn init( axes: [n]*Axis, screenCoordIndices: [n]u1 ) Self {
+        pub fn init( axes: [N]*Axis, screenCoordIndices: [N]u1 ) Self {
             return Self {
                 .axes = axes,
                 .screenCoordIndices = screenCoordIndices,
@@ -123,8 +162,8 @@ pub fn AxisDraggable( comptime n: usize ) type {
 
         fn canHandlePress( dragger: *Dragger, mouse_PX: [2]f64 ) bool {
             const self = @fieldParentPtr( Self, "dragger", dragger );
-            for ( self.axes ) |axis, i| {
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
+            for ( self.axes ) |axis, n| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
                 if ( mouseFrac < 0.0 or mouseFrac > 1.0 ) {
                     return false;
                 }
@@ -134,48 +173,48 @@ pub fn AxisDraggable( comptime n: usize ) type {
 
         fn handlePress( dragger: *Dragger, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
-            for ( self.axes ) |axis, i| {
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
-                self.grabCoords[i] = axis.bounds( ).fracToValue( mouseFrac );
+            for ( self.axes ) |axis, n| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
+                self.grabCoords[n] = axis.bounds( ).fracToValue( mouseFrac );
             }
         }
 
         fn handleDrag( dragger: *Dragger, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
-            for ( self.axes ) |axis, i| {
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
-                axis.set( mouseFrac, self.grabCoords[i], axis.scale );
+            for ( self.axes ) |axis, n| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
+                axis.set( mouseFrac, self.grabCoords[n], axis.scale );
             }
         }
 
         fn handleRelease( dragger: *Dragger, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
-            for ( self.axes ) |axis, i| {
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
-                axis.set( mouseFrac, self.grabCoords[i], axis.scale );
+            for ( self.axes ) |axis, n| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
+                axis.set( mouseFrac, self.grabCoords[n], axis.scale );
             }
         }
     };
 }
 
-pub fn AxisUpdatingHandler( comptime n: usize ) type {
+pub fn AxisUpdatingHandler( comptime N: usize ) type {
     return struct {
         const Self = @This();
 
-        axes: [n]*Axis,
-        screenCoordIndices: [n]u1,
+        axes: [N]*Axis,
+        screenCoordIndices: [N]u1,
 
         // Axis scales and viewport sizes from the most recent time
         // one of their scales was explicitly changed; used below
         // to implicitly rescale when widget size or hidpi scaling
         // changes
-        sizesFromLastRealRescale_PX: [n]f64,
-        scalesFromLastRealRescale: [n]f64,
+        sizesFromLastRealRescale_PX: [N]f64,
+        scalesFromLastRealRescale: [N]f64,
 
         // Axis scales, explicit or not, from the most recent render
-        scalesFromLastRender: [n]f64,
+        scalesFromLastRender: [N]f64,
 
-        pub fn init( axes: [n]*Axis, screenCoordIndices: [n]u1 ) Self {
+        pub fn init( axes: [N]*Axis, screenCoordIndices: [N]u1 ) Self {
             return Self {
                 .axes = axes,
                 .screenCoordIndices = screenCoordIndices,
@@ -187,13 +226,13 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
 
         pub fn onRender( glArea: *GtkGLArea, glContext: *GdkGLContext, self: *Self ) callconv(.C) gboolean {
             const viewport_PX = glzGetViewport_PX( );
-            for ( self.axes ) |axis, i| {
-                axis.viewport_PX = viewport_PX[ self.screenCoordIndices[i] ];
+            for ( self.axes ) |axis, n| {
+                axis.viewport_PX = viewport_PX[ self.screenCoordIndices[n] ];
             }
 
             var isRealRescale = false;
-            for ( self.axes ) |axis, i| {
-                if ( axis.scale != self.scalesFromLastRender[i] ) {
+            for ( self.axes ) |axis, n| {
+                if ( axis.scale != self.scalesFromLastRender[n] ) {
                     isRealRescale = true;
                     break;
                 }
@@ -208,17 +247,17 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
                 // close as possible to what they were the last time there was
                 // a "real" scale change
                 var autoRescaleFactor = inf( f64 );
-                for ( self.axes ) |axis, i| {
+                for ( self.axes ) |axis, n| {
                     // If this is the first time this axis has had a valid size,
                     // init its sizeFromLastRealRescale based on its defaultSpan
-                    if ( isNan( self.sizesFromLastRealRescale_PX[i] ) ) {
+                    if ( isNan( self.sizesFromLastRealRescale_PX[n] ) ) {
                         const initialRescaleFactor = axis.span( ) / axis.defaultSpan;
-                        self.sizesFromLastRealRescale_PX[i] = axis.viewport_PX.span / initialRescaleFactor;
+                        self.sizesFromLastRealRescale_PX[n] = axis.viewport_PX.span / initialRescaleFactor;
                     }
 
                     // The highest factor we can multiply this axis scale by
                     // and still keep its previous bounds within its viewport
-                    const maxRescaleFactor = axis.viewport_PX.span / self.sizesFromLastRealRescale_PX[i];
+                    const maxRescaleFactor = axis.viewport_PX.span / self.sizesFromLastRealRescale_PX[n];
 
                     // We will rescale all axes by a single factor that keeps
                     // all their previous bounds within their viewports
@@ -226,8 +265,8 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
                 }
 
                 // Rescale all axes by a single factor
-                for ( self.axes ) |axis, i| {
-                    axis.scale = autoRescaleFactor * self.scalesFromLastRealRescale[i];
+                for ( self.axes ) |axis, n| {
+                    axis.scale = autoRescaleFactor * self.scalesFromLastRealRescale[n];
                 }
             }
 
@@ -236,18 +275,18 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
             return 0;
         }
 
-        fn axisSizes_PX( axes: [n]*const Axis ) [n]f64 {
-            var sizes_PX = @as( [n]f64, undefined );
-            for ( axes ) |axis, i| {
-                sizes_PX[i] = axis.viewport_PX.span;
+        fn axisSizes_PX( axes: [N]*const Axis ) [N]f64 {
+            var sizes_PX = @as( [N]f64, undefined );
+            for ( axes ) |axis, n| {
+                sizes_PX[n] = axis.viewport_PX.span;
             }
             return sizes_PX;
         }
 
-        fn axisScales( axes: [n]*const Axis ) [n]f64 {
-            var scales = @as( [n]f64, undefined );
-            for ( axes ) |axis, i| {
-                scales[i] = axis.scale;
+        fn axisScales( axes: [N]*const Axis ) [N]f64 {
+            var scales = @as( [N]f64, undefined );
+            for ( axes ) |axis, n| {
+                scales[n] = axis.scale;
             }
             return scales;
         }
@@ -257,8 +296,8 @@ pub fn AxisUpdatingHandler( comptime n: usize ) type {
             const zoomSteps = glzWheelSteps( ev );
             const zoomFactor = pow( f64, zoomStepFactor, -zoomSteps );
             const mouse_PX = gtkzMousePos_PX( widget, ev );
-            for ( self.axes ) |axis, i| {
-                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[i] ] );
+            for ( self.axes ) |axis, n| {
+                const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
                 const mouseCoord = axis.bounds( ).fracToValue( mouseFrac );
                 const scale = zoomFactor*axis.scale;
                 axis.set( mouseFrac, mouseCoord, scale );

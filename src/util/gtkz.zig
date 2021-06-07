@@ -56,9 +56,9 @@ pub fn gtkzMousePos_PX( widget: *GtkWidget, ev: anytype ) [2]f64 {
     };
 
     var mouse_PX = @as( [2]f64, undefined );
-    for ( mouse_LPX ) |coord_LPX, i| {
+    for ( mouse_LPX ) |coord_LPX, n| {
         // Scale, then add 0.5 to get the center of a physical pixel
-        mouse_PX[i] = scale*coord_LPX + 0.5;
+        mouse_PX[n] = scale*coord_LPX + 0.5;
     }
     return mouse_PX;
 }
