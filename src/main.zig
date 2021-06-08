@@ -281,6 +281,10 @@ pub fn main( ) !void {
     _ = try gtkzConnectHandler( glArea, "motion-notify-event", DraggingHandler.onMouseMove, &draggingHandler );
     _ = try gtkzConnectHandler( glArea, "button-release-event", DraggingHandler.onMouseUp, &draggingHandler );
 
+    const fullscreenKeys = [_]guint { GDK_KEY_f, GDK_KEY_F11 };
+    var fullscreenKeysHandler = FullscreenKeysHandler.init( &fullscreenKeys );
+    _ = try gtkzConnectHandler( glArea, "key-press-event", FullscreenKeysHandler.onKeyDown, &fullscreenKeysHandler );
+
     const closeKeys = [_]guint { GDK_KEY_Escape };
     var closeKeysHandler = CloseKeysHandler.init( &closeKeys );
     _ = try gtkzConnectHandler( glArea, "key-press-event", CloseKeysHandler.onKeyDown, &closeKeysHandler );

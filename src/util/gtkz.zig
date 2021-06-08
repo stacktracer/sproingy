@@ -75,6 +75,47 @@ pub fn gtkz_signal_connect_data( instance: gpointer, signalName: [*c]const gchar
     };
 }
 
+pub const FullscreenKeysHandler = struct {
+    keyvals: []const guint,
+
+    pub fn init( keyvals: []const guint ) @This() {
+        return @This() {
+            .keyvals = keyvals,
+        };
+    }
+
+    pub fn onKeyDown( widget: *GtkWidget, ev: *GdkEventKey, self: *@This() ) callconv(.C) gboolean {
+        // TODO: Use a hash set
+        for ( self.keyvals ) |keyval| {
+            if ( ev.keyval == keyval ) {
+                const gdkWindow = gtk_widget_get_window( widget );
+                if ( gdkWindow != null ) {
+                    const gtkAncestor = gtk_widget_get_toplevel( widget );
+                    if ( gtk_widget_is_toplevel( gtkAncestor ) == 1 ) {
+                        const gtkWindow = @ptrCast( *GtkWindow, gtkAncestor );
+                        const windowState = gdk_window_get_state( gdkWindow );
+                        if ( @enumToInt( windowState ) & GDK_WINDOW_STATE_FULLSCREEN != 0 ) {
+                            gtk_window_unfullscreen( gtkWindow );
+
+                            // If mouse is not in the unfullscreened window, and using focus-
+                            // follows-mouse, then the window loses focus, so call present to
+                            // get focus back ... and the focus loss isn't quite immediate, so
+                            // pass a timestep that tells the window manager that the "regain
+                            // focus" comes AFTER the "lose focus"
+                            gtk_window_present_with_time( gtkWindow, ev.time + 500 );
+                        }
+                        else {
+                            gtk_window_fullscreen( gtkWindow );
+                        }
+                        return 1;
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+};
+
 pub const CloseKeysHandler = struct {
     keyvals: []const guint,
 
