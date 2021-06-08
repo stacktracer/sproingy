@@ -4,7 +4,7 @@ const max = std.math.max;
 const sqrt = std.math.sqrt;
 const minInt = std.math.minInt;
 const milliTimestamp = std.time.milliTimestamp;
-usingnamespace @import( "util/misc.zig" );
+const Atomic = std.atomic.Atomic;
 usingnamespace @import( "util/axis.zig" );
 
 pub fn SimConfig( comptime N: usize, comptime P: usize ) type {
@@ -13,18 +13,33 @@ pub fn SimConfig( comptime N: usize, comptime P: usize ) type {
         timestep: f64,
         xLimits: [N]Interval,
         particles: [P]Particle(N),
+        accelerators: []*const Accelerator(N,P),
+    };
+}
+
+pub fn Accelerator( comptime N: usize, comptime P: usize ) type {
+    return struct {
+        const Self = @This();
+
+        addAccelerationFn: fn ( self: *const Self, xs: *const [N*P]f64, ms: [P]f64, p: usize, xp: [N]f64, aSum_OUT: *[N]f64 ) void,
+
+        pub fn addAcceleration( self: *const Self, xs: *const [N*P]f64, ms: [P]f64, p: usize, xp: [N]f64, aSum_OUT: *[N]f64 ) void {
+            return self.addAccelerationFn( self, xs, ms, p, xp, aSum_OUT );
+        }
     };
 }
 
 pub fn Particle( comptime N: usize ) type {
     return struct {
-        mass: f64,
+        const Self = @This();
+
+        m: f64,
         x: [N]f64,
         v: [N]f64,
 
-        pub fn init( mass: f64, x: [N]f64, v: [N]f64 ) @This() {
+        pub fn init( m: f64, x: [N]f64, v: [N]f64 ) Self {
             return .{
-                .mass = mass,
+                .m = m,
                 .x = x,
                 .v = v,
             };
@@ -32,34 +47,17 @@ pub fn Particle( comptime N: usize ) type {
     };
 }
 
-pub const SimControl = struct {
-    // Accessed atomically
-    _keepRunning: bool = true,
+pub fn SimListener( comptime N: usize, comptime P: usize ) type {
+    return struct {
+        const Self = @This();
 
-    pub fn init( ) SimControl {
-        return SimControl {
-            ._keepRunning = false,
-        };
-    }
+        setParticleCoordsFn: fn ( self: *Self, xs: *const [N*P]f64 ) anyerror!void,
 
-    /// Called on simulator thread
-    pub fn running( self: *SimControl ) bool {
-        return @atomicLoad( bool, &self._keepRunning, .SeqCst );
-    }
-
-    /// Called on any thread
-    pub fn stop( self: *SimControl ) void {
-        @atomicStore( bool, &self._keepRunning, false, .SeqCst );
-    }
-};
-
-pub const SimListener = struct {
-    setParticleCoordsFn: fn ( self: *SimListener, xs: []const f64 ) anyerror!void,
-
-    pub fn setParticleCoords( self: *SimListener, xs: []const f64 ) !void {
-        return self.setParticleCoordsFn( self, xs );
-    }
-};
+        pub fn setParticleCoords( self: *Self, xs: *const [N*P]f64 ) !void {
+            return self.setParticleCoordsFn( self, xs );
+        }
+    };
+}
 
 /// Caller must ensure that locations pointed to by input
 /// args remain valid until after this fn returns.
@@ -67,7 +65,7 @@ pub fn runSimulation(
     comptime N: usize,
     comptime P: usize,
     config: *const SimConfig(N,P),
-    listener: *SimListener,
+    listener: *SimListener(N,P),
     running: *const Atomic(bool),
 ) !void {
     // TODO: Use SIMD Vectors?
@@ -78,12 +76,13 @@ pub fn runSimulation(
 
     const tFull = config.timestep;
     const tHalf = 0.5*tFull;
+    const accelerators = config.accelerators;
 
-    var masses = @as( [P]f64, undefined );
+    var ms = @as( [P]f64, undefined );
     var xsStart = @as( [N*P]f64, undefined );
     var vsStart = @as( [N*P]f64, undefined );
     for ( config.particles ) |particle, p| {
-        masses[p] = particle.mass;
+        ms[p] = particle.m;
         xsStart[ p*N.. ][ 0..N ].* = particle.x;
         vsStart[ p*N.. ][ 0..N ].* = particle.v;
     }
@@ -106,18 +105,13 @@ pub fn runSimulation(
     }
 
     var coordArrays = @as( [7][N*P]f64, undefined );
-    var xsCurr = @as( []f64, &coordArrays[0] );
-    var xsNext = @as( []f64, &coordArrays[1] );
-    var vsCurr = @as( []f64, &coordArrays[2] );
-    var vsHalf = @as( []f64, &coordArrays[3] );
-    var vsNext = @as( []f64, &coordArrays[4] );
-    var asCurr = @as( []f64, &coordArrays[5] );
-    var asNext = @as( []f64, &coordArrays[6] );
-
-    // TODO: Get accelerators from config
-    var gravity = ConstantAcceleration(N).init( [_]f64 { 0.0, -9.80665 } );
-    var springs = SpringsAcceleration(N).init( 0.6, 300.0, &xsCurr );
-    const accelerators = [_]*Accelerator(N) { &gravity.accelerator, &springs.accelerator };
+    var xsCurr = &coordArrays[0];
+    var xsNext = &coordArrays[1];
+    var vsCurr = &coordArrays[2];
+    var vsHalf = &coordArrays[3];
+    var vsNext = &coordArrays[4];
+    var asCurr = &coordArrays[5];
+    var asNext = &coordArrays[6];
 
     xsCurr[ 0..N*P ].* = xsStart;
     vsCurr[ 0..N*P ].* = vsStart;
@@ -126,13 +120,13 @@ pub fn runSimulation(
         var aCurr = asCurr[ c0.. ][ 0..N ];
         aCurr.* = [1]f64 { 0.0 } ** N;
         for ( accelerators ) |accelerator| {
-            accelerator.addAcceleration( p, masses[p], xCurr.*, aCurr );
+            accelerator.addAcceleration( xsCurr, ms, p, xCurr.*, aCurr );
         }
     }
 
     const updateInterval_MILLIS = config.updateInterval_MILLIS;
     var nextUpdate_PMILLIS = @as( i64, minInt( i64 ) );
-    while ( running.get( ) ) {
+    while ( running.load( .SeqCst ) ) {
         // Send particle coords to the listener periodically
         const now_PMILLIS = milliTimestamp( );
         if ( now_PMILLIS >= nextUpdate_PMILLIS ) {
@@ -152,7 +146,7 @@ pub fn runSimulation(
             var aNext = asNext[ c0.. ][ 0..N ];
             aNext.* = [1]f64 { 0.0 } ** N;
             for ( accelerators ) |accelerator| {
-                accelerator.addAcceleration( p, masses[p], xNext.*, aNext );
+                accelerator.addAcceleration( xsCurr, ms, p, xNext.*, aNext );
             }
         }
         for ( vsHalf ) |vHalf, c| {
@@ -187,8 +181,6 @@ pub fn runSimulation(
             if ( !hasBounce ) {
                 continue;
             }
-
-            const mass = masses[ p ];
 
             var aNext = asNext[ c0.. ][ 0..N ];
             var vNext = vsNext[ c0.. ][ 0..N ];
@@ -270,7 +262,7 @@ pub fn runSimulation(
                     }
                     aNext_ = [1]f64 { 0.0 } ** N;
                     for ( accelerators ) |accelerator| {
-                        accelerator.addAcceleration( p, mass, xNext_, &aNext_ );
+                        accelerator.addAcceleration( xsCurr, ms, p, xNext_, &aNext_ );
                     }
                     for ( vHalf ) |vHalf_n, n| {
                         vNext_[n] = vHalf_n + aNext_[n]*tHalf_;
@@ -295,7 +287,7 @@ pub fn runSimulation(
                     }
                     aNext.* = [1]f64 { 0.0 } ** N;
                     for ( accelerators ) |accelerator| {
-                        accelerator.addAcceleration( p, mass, xNext.*, aNext );
+                        accelerator.addAcceleration( xsCurr, ms, p, xNext.*, aNext );
                     }
                     for ( vHalf ) |vHalf_n, n| {
                         vNext[n] = vHalf_n + aNext[n]*tHalf_;
@@ -305,94 +297,10 @@ pub fn runSimulation(
         }
 
         // Rotate slices
-        swapPtrs( f64, &asCurr, &asNext );
-        swapPtrs( f64, &vsCurr, &vsNext );
-        swapPtrs( f64, &xsCurr, &xsNext );
+        swap( *[N*P]f64, &asCurr, &asNext );
+        swap( *[N*P]f64, &vsCurr, &vsNext );
+        swap( *[N*P]f64, &xsCurr, &xsNext );
     }
-}
-
-pub fn Accelerator( comptime N: usize ) type {
-    return struct {
-        addAccelerationFn: fn ( self: *const @This(), p: usize, mass: f64, x: [N]f64, aSum_OUT: *[N]f64 ) void,
-
-        pub fn addAcceleration( self: *const @This(), p: usize, mass: f64, x: [N]f64, aSum_OUT: *[N]f64 ) void {
-            return self.addAccelerationFn( self, p, mass, x, aSum_OUT );
-        }
-    };
-}
-
-pub fn ConstantAcceleration( comptime N: usize ) type {
-    return struct {
-        acceleration: [N]f64,
-        accelerator: Accelerator(N),
-
-        pub fn init( acceleration: [N]f64 ) @This() {
-            return .{
-                .acceleration = acceleration,
-                .accelerator = .{
-                    .addAccelerationFn = addAcceleration,
-                },
-            };
-        }
-
-        fn addAcceleration( accelerator: *const Accelerator(N), p: usize, mass: f64, x: [N]f64, aSum_OUT: *[N]f64 ) void {
-            const self = @fieldParentPtr( @This(), "accelerator", accelerator );
-            for ( self.acceleration ) |a_n, n| {
-                aSum_OUT[n] += a_n;
-            }
-        }
-    };
-}
-
-pub fn SpringsAcceleration( comptime N: usize ) type {
-    return struct {
-        restLength: f64,
-        stiffness: f64,
-        allParticleCoords: *[]f64,
-        accelerator: Accelerator(N),
-
-        pub fn init( restLength: f64, stiffness: f64, allParticleCoords: *[]f64 ) @This() {
-            return .{
-                .restLength = restLength,
-                .stiffness = stiffness,
-                .allParticleCoords = allParticleCoords,
-                .accelerator = .{
-                    .addAccelerationFn = addAcceleration,
-                },
-            };
-        }
-
-        fn addAcceleration( accelerator: *const Accelerator(N), p: usize, mass: f64, x: [N]f64, aSum_OUT: *[N]f64 ) void {
-            const self = @fieldParentPtr( @This(), "accelerator", accelerator );
-            const c1 = self.stiffness / mass;
-
-            const c0 = p * N;
-
-            const allParticleCoords = self.allParticleCoords.*;
-            var b0 = @as( usize, 0 );
-            while ( b0 < allParticleCoords.len ) : ( b0 += N ) {
-                if ( b0 != c0 ) {
-                    const xOther = allParticleCoords[ b0.. ][ 0..N ];
-
-                    var ds = @as( [N]f64, undefined );
-                    var dSquared = @as( f64, 0.0 );
-                    for ( xOther ) |xOther_n, n| {
-                        const d_n = xOther_n - x[n];
-                        ds[n] = d_n;
-                        dSquared += d_n * d_n;
-                    }
-                    const d = sqrt( dSquared );
-
-                    const offsetFromRest = d - self.restLength;
-                    const c2 = c1 * offsetFromRest / d;
-                    for ( ds ) |d_n, n| {
-                        // a = ( stiffness * offsetFromRest * dn/d ) / mass
-                        aSum_OUT[n] += c2 * d_n;
-                    }
-                }
-            }
-        }
-    };
 }
 
 const Buffer = struct {
@@ -439,8 +347,8 @@ fn appendBounceTimes( x: f64, v: f64, a: f64, xWall: f64, tsWall_OUT: *Buffer ) 
     }
 }
 
-fn swapPtrs( comptime T: type, a: *[]T, b: *[]T ) void {
-    const temp = a.ptr;
-    a.ptr = b.ptr;
-    b.ptr = temp;
+fn swap( comptime T: type, a: *T, b: *T ) void {
+    const temp = a.*;
+    a.* = b.*;
+    b.* = temp;
 }

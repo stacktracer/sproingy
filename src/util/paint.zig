@@ -57,7 +57,7 @@ pub const PaintingHandler = struct {
         };
         for ( self.painters ) |painter| {
             painter.glPaint( &pc ) catch |e| {
-                std.debug.warn( "Failed to paint: painter = {}, error = {}\n", .{ painter.name, e } );
+                std.debug.warn( "Failed to paint: painter = {s}, error = {}\n", .{ painter.name, e } );
             };
         }
         return 0;
@@ -100,7 +100,7 @@ pub const MultiPaintable = struct {
         const self = @fieldParentPtr( MultiPaintable, "painter", painter );
         for ( self.childPainters.items ) |childPainter| {
             childPainter.glPaint( pc ) catch |e| {
-                std.debug.warn( "Failed to paint: painter = {}, error = {}\n", .{ childPainter.name, e } );
+                std.debug.warn( "Failed to paint: painter = {s}, error = {}\n", .{ childPainter.name, e } );
                 if ( @errorReturnTrace( ) ) |trace| {
                     std.debug.dumpStackTrace( trace.* );
                 }

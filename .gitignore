@@ -1,3 +1,4 @@
 /include
 zig-cache
+zig-out
 *.code-workspace
