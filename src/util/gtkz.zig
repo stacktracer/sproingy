@@ -88,11 +88,11 @@ pub const FullscreenKeysHandler = struct {
         // TODO: Use a hash set
         for ( self.keyvals ) |keyval| {
             if ( ev.keyval == keyval ) {
-                const gdkWindow = gtk_widget_get_window( widget );
-                if ( gdkWindow != null ) {
-                    const gtkAncestor = gtk_widget_get_toplevel( widget );
-                    if ( gtk_widget_is_toplevel( gtkAncestor ) == 1 ) {
-                        const gtkWindow = @ptrCast( *GtkWindow, gtkAncestor );
+                const gtkAncestor = gtk_widget_get_toplevel( widget );
+                if ( gtk_widget_is_toplevel( gtkAncestor ) == 1 ) {
+                    const gtkWindow = @ptrCast( *GtkWindow, gtkAncestor );
+                    const gdkWindow = gtk_widget_get_window( gtkAncestor );
+                    if ( gdkWindow != null ) {
                         const windowState = gdk_window_get_state( gdkWindow );
                         if ( @enumToInt( windowState ) & GDK_WINDOW_STATE_FULLSCREEN != 0 ) {
                             gtk_window_unfullscreen( gtkWindow );

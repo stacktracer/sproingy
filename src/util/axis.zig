@@ -160,7 +160,7 @@ pub fn AxisDraggable( comptime N: usize ) type {
             };
         }
 
-        fn canHandlePress( dragger: *Dragger, mouse_PX: [2]f64 ) bool {
+        fn canHandlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) bool {
             const self = @fieldParentPtr( Self, "dragger", dragger );
             for ( self.axes ) |axis, n| {
                 const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
@@ -171,7 +171,7 @@ pub fn AxisDraggable( comptime N: usize ) type {
             return true;
         }
 
-        fn handlePress( dragger: *Dragger, mouse_PX: [2]f64 ) void {
+        fn handlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
             for ( self.axes ) |axis, n| {
                 const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
@@ -179,7 +179,7 @@ pub fn AxisDraggable( comptime N: usize ) type {
             }
         }
 
-        fn handleDrag( dragger: *Dragger, mouse_PX: [2]f64 ) void {
+        fn handleDrag( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
             for ( self.axes ) |axis, n| {
                 const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
@@ -187,7 +187,7 @@ pub fn AxisDraggable( comptime N: usize ) type {
             }
         }
 
-        fn handleRelease( dragger: *Dragger, mouse_PX: [2]f64 ) void {
+        fn handleRelease( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
             for ( self.axes ) |axis, n| {
                 const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );

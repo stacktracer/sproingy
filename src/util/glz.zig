@@ -72,6 +72,12 @@ pub fn glzDisableBlending( ) void {
     glDisable( GL_BLEND );
 }
 
+pub fn glzUniformInterval1( location: GLint, interval: Interval ) void {
+    glUniform2f( location,
+                 @floatCast( f32, interval.start ),
+                 @floatCast( f32, interval.span ) );
+}
+
 pub fn glzUniformInterval2( location: GLint, interval: [2]Interval ) void {
     glUniform4f( location,
                  @floatCast( f32, interval[0].start ),
