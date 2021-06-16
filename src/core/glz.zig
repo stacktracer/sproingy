@@ -1,6 +1,6 @@
 const std = @import( "std" );
 pub usingnamespace @import( "c.zig" );
-usingnamespace @import( "axis.zig" );
+usingnamespace @import( "util.zig" );
 
 pub const GlzError = error {
     GenericFailure,
@@ -72,6 +72,12 @@ pub fn glzDisableBlending( ) void {
     glDisable( GL_BLEND );
 }
 
+pub fn glzHasCurrentContext( ) bool {
+    var major: GLint = -1;
+    glGetIntegerv( GL_MAJOR_VERSION, &major );
+    return ( major != -1 );
+}
+
 pub fn glzUniformInterval1( location: GLint, interval: Interval ) void {
     glUniform2f( location,
                  @floatCast( f32, interval.start ),
@@ -97,29 +103,4 @@ pub fn glzGetViewport_PX( ) [2]Interval {
         Interval.init( x, w ),
         Interval.init( y, h ),
     };
-}
-
-pub fn glzWheelSteps( ev: *GdkEventScroll ) f64 {
-    var direction: GdkScrollDirection = undefined;
-    if ( gdk_event_get_scroll_direction( @ptrCast( *GdkEvent, ev ), &direction ) != 0 ) {
-        return switch ( direction ) {
-            .GDK_SCROLL_UP => 1.0,
-            .GDK_SCROLL_DOWN => -1.0,
-            else => 0.0,
-        };
-    }
-
-    var xDelta: f64 = undefined;
-    var yDelta: f64 = undefined;
-    if ( gdk_event_get_scroll_deltas( @ptrCast( *GdkEvent, ev ), &xDelta, &yDelta ) != 0 ) {
-        return yDelta;
-    }
-
-    return 0.0;
-}
-
-pub fn glzHasCurrentContext( ) bool {
-    var major: GLint = -1;
-    glGetIntegerv( GL_MAJOR_VERSION, &major );
-    return ( major != -1 );
 }

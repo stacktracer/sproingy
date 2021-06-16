@@ -3,9 +3,9 @@ const min = std.math.min;
 const max = std.math.max;
 const sqrt = std.math.sqrt;
 const minInt = std.math.minInt;
-const milliTimestamp = std.time.milliTimestamp;
 const Atomic = std.atomic.Atomic;
-usingnamespace @import( "util/axis.zig" );
+const milliTimestamp = std.time.milliTimestamp;
+usingnamespace @import( "core/util.zig" );
 
 pub fn SimConfig( comptime N: usize, comptime P: usize ) type {
     return struct {

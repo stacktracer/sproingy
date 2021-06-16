@@ -1,4 +1,6 @@
 const std = @import( "std" );
+const ArrayList = std.ArrayList;
+const Allocator = std.mem.Allocator;
 pub usingnamespace @import( "c.zig" );
 
 pub const GtkzError = error {
@@ -9,6 +11,35 @@ pub const GtkzHandlerConnection = struct {
     instance: gpointer,
     handlerId: gulong,
 };
+
+pub fn gtkzInit( allocator: *Allocator ) !void {
+    // TODO: Probably need some errdefers
+    var it = std.process.args( );
+    defer it.deinit( );
+
+    var args = ArrayList( [:0]u8 ).init( allocator );
+    defer {
+        for ( args.items ) |arg| {
+            allocator.free( arg );
+        }
+        args.deinit( );
+    }
+
+    var argsAsCstrs = ArrayList( [*c]u8 ).init( allocator );
+    defer argsAsCstrs.deinit( );
+
+    while ( true ) {
+        const arg = try ( it.next( allocator ) orelse break );
+        try args.append( arg );
+        try argsAsCstrs.append( arg.ptr );
+    }
+
+    var argc = @intCast( c_int, argsAsCstrs.items.len );
+    var argv = @as( [*c][*c]u8, argsAsCstrs.items.ptr );
+    if ( gtk_init_check( &argc, &argv ) != 1 ) {
+        return GtkzError.GenericFailure;
+    }
+}
 
 pub fn gtkzConnectHandler( instance: gpointer, signalName: [*c]const gchar, handlerFn: anytype, userData: gpointer ) !GtkzHandlerConnection {
     return GtkzHandlerConnection {
@@ -61,6 +92,25 @@ pub fn gtkzMousePos_PX( widget: *GtkWidget, ev: anytype ) [2]f64 {
         mouse_PX[n] = scale*coord_LPX + 0.5;
     }
     return mouse_PX;
+}
+
+pub fn gtkzWheelSteps( ev: *GdkEventScroll ) f64 {
+    var direction: GdkScrollDirection = undefined;
+    if ( gdk_event_get_scroll_direction( @ptrCast( *GdkEvent, ev ), &direction ) != 0 ) {
+        return switch ( direction ) {
+            .GDK_SCROLL_UP => 1.0,
+            .GDK_SCROLL_DOWN => -1.0,
+            else => 0.0,
+        };
+    }
+
+    var xDelta: f64 = undefined;
+    var yDelta: f64 = undefined;
+    if ( gdk_event_get_scroll_deltas( @ptrCast( *GdkEvent, ev ), &xDelta, &yDelta ) != 0 ) {
+        return yDelta;
+    }
+
+    return 0.0;
 }
 
 pub fn gtkz_signal_connect( instance: gpointer, signalName: [*c]const gchar, handler: GCallback, userData: gpointer ) !gulong {

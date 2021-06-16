@@ -1,20 +1,15 @@
 const std = @import( "std" );
-const inf = std.math.inf;
-const min = std.math.min;
 const sqrt = std.math.sqrt;
 const Mutex = std.Thread.Mutex;
 const Atomic = std.atomic.Atomic;
 const Allocator = std.mem.Allocator;
+usingnamespace @import( "core/util.zig" );
+usingnamespace @import( "core/core.zig" );
+usingnamespace @import( "core/gtkz.zig" );
+usingnamespace @import( "space/view.zig" );
+usingnamespace @import( "space/dots.zig" );
+usingnamespace @import( "time/view.zig" );
 usingnamespace @import( "sim.zig" );
-usingnamespace @import( "util/axis.zig" );
-usingnamespace @import( "util/drag.zig" );
-usingnamespace @import( "util/glz.zig" );
-usingnamespace @import( "util/gtkz.zig" );
-usingnamespace @import( "util/misc.zig" );
-usingnamespace @import( "util/paint.zig" );
-usingnamespace @import( "drawarrays.zig" );
-usingnamespace @import( "dots.zig" );
-usingnamespace @import( "cursor.zig" );
 
 // TODO: Understand why this magic makes async/await work sensibly
 pub const io_mode = .evented;
@@ -192,10 +187,6 @@ pub fn main( ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
     const allocator = &gpa.allocator;
 
-    var args = try ProcessArgs.init( allocator );
-    defer args.deinit( );
-    gtk_init( &args.argc, &args.argv );
-
     const N = 2;
     const P = 3;
 
@@ -221,138 +212,44 @@ pub fn main( ) !void {
         .accelerators = &accelerators,
     };
 
-    const glAreaA = gtk_gl_area_new( );
-    gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glAreaA ), 3, 2 );
-    gtk_widget_set_events( glAreaA, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK );
-    gtk_widget_set_can_focus( glAreaA, 1 );
+    try gtkzInit( allocator );
 
-    const glAreaB = gtk_gl_area_new( );
-    gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, glAreaB ), 3, 2 );
-    gtk_widget_set_events( glAreaB, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK );
-    gtk_widget_set_can_focus( glAreaB, 1 );
+    var timeView = @as( TimeView, undefined );
+    try timeView.init( );
+
+    var spaceView = @as( SpaceView, undefined );
+    try spaceView.init( &simConfig.xLimits, allocator );
 
     const splitter = gtk_paned_new( .GTK_ORIENTATION_VERTICAL );
     gtk_paned_set_wide_handle( @ptrCast( *GtkPaned, splitter ), 1 );
-    gtk_paned_pack1( @ptrCast( *GtkPaned, splitter ), glAreaA, 1, 1 );
-    gtk_paned_pack2( @ptrCast( *GtkPaned, splitter ), glAreaB, 1, 1 );
-    gtk_widget_set_size_request( glAreaA, -1, 70 );
-    gtk_widget_set_size_request( glAreaB, -1, 30 );
+    gtk_paned_pack1( @ptrCast( *GtkPaned, splitter ), spaceView.glArea, 1, 1 );
+    gtk_paned_pack2( @ptrCast( *GtkPaned, splitter ), timeView.glArea, 1, 1 );
+    gtk_widget_set_size_request( spaceView.glArea, -1, 70 );
+    gtk_widget_set_size_request( timeView.glArea, -1, 30 );
 
     const window = gtk_window_new( .GTK_WINDOW_TOPLEVEL );
     gtk_container_add( @ptrCast( *GtkContainer, window ), splitter );
     gtk_window_set_title( @ptrCast( *GtkWindow, window ), "Sproingy" );
     gtk_window_set_default_size( @ptrCast( *GtkWindow, window ), 480, 360 );
 
-
-
-
-
-    var axisA0 = Axis.initBounds( -8.4, 8.4, 1 );
-    var axisA1 = Axis.initBounds( -6.4, 6.4, 1 );
-    var axesA = [N]*Axis { &axisA0, &axisA1 };
-
-    // TODO: Replace with aspect-ratio locking
-    var axesScaleA = inf( f64 );
-    for ( axesA ) |axis| {
-        axesScaleA = min( axesScaleA, axis.scale );
-    }
-    for ( axesA ) |axis| {
-        axis.scale = axesScaleA;
-    }
-
-    var bgPaintableA = ClearPaintable.init( "bgA", GL_COLOR_BUFFER_BIT );
-    bgPaintableA.rgba = [_]GLfloat { 0.4, 0.4, 0.4, 1.0 };
-
-    var boxPaintableA = DrawArraysPaintable.init( "boxA", axesA, GL_TRIANGLE_STRIP, allocator );
-    defer boxPaintableA.deinit( );
-    boxPaintableA.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
-    const xMin0 = @floatCast( GLfloat, simConfig.xLimits[0].lowerBound( ).coord );
-    const xMax0 = @floatCast( GLfloat, simConfig.xLimits[0].upperBound( ).coord );
-    const xMin1 = @floatCast( GLfloat, simConfig.xLimits[1].lowerBound( ).coord );
-    const xMax1 = @floatCast( GLfloat, simConfig.xLimits[1].upperBound( ).coord );
-    var boxCoordsA = [_]GLfloat { xMin0,xMax1, xMin0,xMin1, xMax0,xMax1, xMax0,xMin1 };
-    try boxPaintableA.coords.appendSlice( &boxCoordsA );
-
-    var dotsPaintableA = DotsPaintable.init( "dots", axesA, allocator );
-    defer dotsPaintableA.deinit( );
-    dotsPaintableA.rgba = [_]GLfloat { 1.0, 0.0, 0.0, 1.0 };
-
-    var axisUpdatingHandlerA = AxisUpdatingHandler(N).init( axesA, [N]u1 { 0, 1 } );
-    _ = try gtkzConnectHandler( glAreaA, "render", AxisUpdatingHandler(2).onRender, &axisUpdatingHandlerA );
-    _ = try gtkzConnectHandler( glAreaA, "scroll-event", AxisUpdatingHandler(2).onMouseWheel, &axisUpdatingHandlerA );
-
-    const paintersA = [_]*Painter {
-        &bgPaintableA.painter,
-        &boxPaintableA.painter,
-        &dotsPaintableA.painter,
-    };
-    var paintingHandlerA = PaintingHandler.init( &paintersA );
-    _ = try gtkzConnectHandler( glAreaA, "render", PaintingHandler.onRender, &paintingHandlerA );
-    _ = try gtkzConnectHandler( window, "delete-event", PaintingHandler.onWindowClosing, &paintingHandlerA );
-
-    var axisDraggableA = AxisDraggable(N).init( axesA, [N]u1 { 0, 1 } );
-    const draggersA = [_]*Dragger {
-        &axisDraggableA.dragger,
-    };
-    var draggingHandlerA = DraggingHandler.init( glAreaA, &draggersA );
-    _ = try gtkzConnectHandler( glAreaA, "button-press-event", DraggingHandler.onMouseDown, &draggingHandlerA );
-    _ = try gtkzConnectHandler( glAreaA, "motion-notify-event", DraggingHandler.onMouseMove, &draggingHandlerA );
-    _ = try gtkzConnectHandler( glAreaA, "button-release-event", DraggingHandler.onMouseUp, &draggingHandlerA );
-
-
-
-
-    var axisB0 = Axis.initBounds( -8.4, 8.4, 1 );
-    var axisB1 = Axis.initBounds( -6.4, 6.4, 1 );
-    var axesB = [N]*Axis { &axisB0, &axisB1 };
-
-    var bgPaintableB = ClearPaintable.init( "bgB", GL_COLOR_BUFFER_BIT );
-    bgPaintableB.rgba = [_]GLfloat { 0.0, 0.0, 0.0, 1.0 };
-
-    var cursorB = VerticalCursor.init( "cursorB", &axisB0 );
-
-    var axisUpdatingHandlerB = AxisUpdatingHandler(N).init( axesB, [N]u1 { 0, 1 } );
-    _ = try gtkzConnectHandler( glAreaB, "render", AxisUpdatingHandler(2).onRender, &axisUpdatingHandlerB );
-    _ = try gtkzConnectHandler( glAreaB, "scroll-event", AxisUpdatingHandler(2).onMouseWheel, &axisUpdatingHandlerB );
-
-    const paintersB = [_]*Painter {
-        &bgPaintableB.painter,
-        &cursorB.painter,
-    };
-    var paintingHandlerB = PaintingHandler.init( &paintersB );
-    _ = try gtkzConnectHandler( glAreaB, "render", PaintingHandler.onRender, &paintingHandlerB );
-    _ = try gtkzConnectHandler( window, "delete-event", PaintingHandler.onWindowClosing, &paintingHandlerB );
-
-    var axisDraggableB = AxisDraggable(N).init( axesB, [N]u1 { 0, 1 } );
-    const draggersB = [_]*Dragger {
-        &cursorB.dragger,
-        &axisDraggableB.dragger,
-    };
-    var draggingHandlerB = DraggingHandler.init( glAreaB, &draggersB );
-    _ = try gtkzConnectHandler( glAreaB, "button-press-event", DraggingHandler.onMouseDown, &draggingHandlerB );
-    _ = try gtkzConnectHandler( glAreaB, "motion-notify-event", DraggingHandler.onMouseMove, &draggingHandlerB );
-    _ = try gtkzConnectHandler( glAreaB, "button-release-event", DraggingHandler.onMouseUp, &draggingHandlerB );
-
-
-
-
-
     const fullscreenKeys = [_]guint { GDK_KEY_f, GDK_KEY_F11 };
     var fullscreenKeysHandler = FullscreenKeysHandler.init( &fullscreenKeys );
-    _ = try gtkzConnectHandler( glAreaA, "key-press-event", FullscreenKeysHandler.onKeyDown, &fullscreenKeysHandler );
-    _ = try gtkzConnectHandler( glAreaB, "key-press-event", FullscreenKeysHandler.onKeyDown, &fullscreenKeysHandler );
+    _ = try gtkzConnectHandler( spaceView.glArea, "key-press-event", FullscreenKeysHandler.onKeyDown, &fullscreenKeysHandler );
+    _ = try gtkzConnectHandler( timeView.glArea, "key-press-event", FullscreenKeysHandler.onKeyDown, &fullscreenKeysHandler );
 
     const closeKeys = [_]guint { GDK_KEY_Escape };
     var closeKeysHandler = CloseKeysHandler.init( &closeKeys );
-    _ = try gtkzConnectHandler( glAreaA, "key-press-event", CloseKeysHandler.onKeyDown, &closeKeysHandler );
-    _ = try gtkzConnectHandler( glAreaB, "key-press-event", CloseKeysHandler.onKeyDown, &closeKeysHandler );
+    _ = try gtkzConnectHandler( spaceView.glArea, "key-press-event", CloseKeysHandler.onKeyDown, &closeKeysHandler );
+    _ = try gtkzConnectHandler( timeView.glArea, "key-press-event", CloseKeysHandler.onKeyDown, &closeKeysHandler );
 
     var quittingHandler = QuittingHandler.init( );
     _ = try gtkzConnectHandler( window, "delete-event", QuittingHandler.onWindowClosing, &quittingHandler );
+    _ = try gtkzConnectHandler( window, "delete-event", TimeView.deinit, &timeView );
+    _ = try gtkzConnectHandler( window, "delete-event", SpaceView.deinit, &spaceView );
 
     var simListener = SimListenerImpl(N,P) {
         .allocator = allocator,
-        .paintable = &dotsPaintableA,
+        .paintable = &spaceView.dotsPaintable,
         .widget = splitter,
     };
     defer simListener.deinit( );

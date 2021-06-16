@@ -1,10 +1,5 @@
-const std = @import( "std" );
-const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
-usingnamespace @import( "util/axis.zig" );
-usingnamespace @import( "util/glz.zig" );
-usingnamespace @import( "util/paint.zig" );
-usingnamespace @import( "util/drag.zig" );
+usingnamespace @import( "../core/core.zig" );
+usingnamespace @import( "../core/glz.zig" );
 
 pub const VerticalCursor = struct {
     axis: *const Axis,
