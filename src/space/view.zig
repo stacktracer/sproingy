@@ -8,6 +8,7 @@ usingnamespace @import( "../core/gtkz.zig" );
 usingnamespace @import( "../core/support.zig" );
 usingnamespace @import( "staticPaintable.zig" );
 usingnamespace @import( "dots.zig" );
+usingnamespace @import( "../time/cursor.zig" );
 
 pub const SpaceView = struct {
     glArea: *GtkWidget,
@@ -28,7 +29,7 @@ pub const SpaceView = struct {
     draggingHandler: DraggingHandler,
 
     // TODO: RLS would be better, but needs https://github.com/ziglang/zig/issues/2765
-    pub fn init( self: *SpaceView, xLimits: *const [2]Interval, allocator: *Allocator ) !void {
+    pub fn init( self: *SpaceView, xLimits: *const [2]Interval, tCursor: *const VerticalCursor, allocator: *Allocator ) !void {
         self.glArea = gtk_gl_area_new( );
         gtk_gl_area_set_required_version( @ptrCast( *GtkGLArea, self.glArea ), 3, 2 );
         gtk_widget_set_events( self.glArea, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK | GDK_KEY_PRESS_MASK );
@@ -60,7 +61,7 @@ pub const SpaceView = struct {
         self.boxPaintable.vCoords = [8]GLfloat { xMin0,xMax1, xMin0,xMin1, xMax0,xMax1, xMax0,xMin1 };
         self.boxPaintable.vCount = 4;
 
-        self.dotsPaintable = DotsPaintable.init( "SpaceView.dotsPaintable", _axes, allocator );
+        self.dotsPaintable = DotsPaintable.init( "SpaceView.dotsPaintable", _axes, tCursor, allocator );
         self.dotsPaintable.rgba = [4]GLfloat { 1.0, 0.0, 0.0, 1.0 };
 
         self.axisUpdatingHandler = AxisUpdatingHandler(2).init( _axes, [2]u1 { 0, 1 } );
@@ -90,6 +91,5 @@ pub const SpaceView = struct {
         // FIXME: Drop self.paintingHandler
         // FIXME: Disconnect signal handlers
         // FIXME: glDeinit
-        self.dotsPaintable.deinit( );
     }
 };

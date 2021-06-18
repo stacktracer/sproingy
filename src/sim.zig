@@ -9,7 +9,7 @@ usingnamespace @import( "core/util.zig" );
 
 pub fn SimConfig( comptime N: usize, comptime P: usize ) type {
     return struct {
-        updateInterval_MILLIS: i64,
+        frameInterval_MILLIS: i64,
         timestep: f64,
         xLimits: [N]Interval,
         particles: [P]Particle(N),
@@ -47,17 +47,15 @@ pub fn Particle( comptime N: usize ) type {
     };
 }
 
-pub fn SimListener( comptime N: usize, comptime P: usize ) type {
-    return struct {
-        const Self = @This();
+pub const SimListener = struct {
+    const Self = @This();
 
-        setParticleCoordsFn: fn ( self: *Self, xs: *const [N*P]f64 ) anyerror!void,
+    addFrameFn: fn ( self: *Self, t: f64, N: usize, xs: []const f64 ) anyerror!void,
 
-        pub fn setParticleCoords( self: *Self, xs: *const [N*P]f64 ) !void {
-            return self.setParticleCoordsFn( self, xs );
-        }
-    };
-}
+    pub fn addFrame( self: *Self, t: f64, N: usize, xs: []const f64 ) !void {
+        return self.addFrameFn( self, t, N, xs );
+    }
+};
 
 /// Caller must ensure that locations pointed to by input
 /// args remain valid until after this fn returns.
@@ -65,7 +63,7 @@ pub fn runSimulation(
     comptime N: usize,
     comptime P: usize,
     config: *const SimConfig(N,P),
-    listener: *SimListener(N,P),
+    listener: *SimListener,
     running: *const Atomic(bool),
 ) !void {
     // TODO: Use SIMD Vectors?
@@ -124,14 +122,15 @@ pub fn runSimulation(
         }
     }
 
-    const updateInterval_MILLIS = config.updateInterval_MILLIS;
-    var nextUpdate_PMILLIS = @as( i64, minInt( i64 ) );
-    while ( running.load( .SeqCst ) ) {
+    const frameInterval_MILLIS = config.frameInterval_MILLIS;
+    var nextFrame_PMILLIS = @as( i64, minInt( i64 ) );
+    var tElapsed = @as( f64, 0 );
+    while ( running.load( .SeqCst ) ) : ( tElapsed += tFull ) {
         // Send particle coords to the listener periodically
         const now_PMILLIS = milliTimestamp( );
-        if ( now_PMILLIS >= nextUpdate_PMILLIS ) {
-            try listener.setParticleCoords( xsCurr );
-            nextUpdate_PMILLIS = now_PMILLIS + updateInterval_MILLIS;
+        if ( now_PMILLIS >= nextFrame_PMILLIS ) {
+            try listener.addFrame( tElapsed, N, xsCurr );
+            nextFrame_PMILLIS = now_PMILLIS + frameInterval_MILLIS;
         }
 
         // Update particle coords, but without checking for bounces

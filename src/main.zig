@@ -1,6 +1,5 @@
 const std = @import( "std" );
 const sqrt = std.math.sqrt;
-const Mutex = std.Thread.Mutex;
 const Atomic = std.atomic.Atomic;
 const Allocator = std.mem.Allocator;
 usingnamespace @import( "core/util.zig" );
@@ -92,96 +91,21 @@ fn SpringsAcceleration( comptime N: usize, comptime P: usize ) type {
     };
 }
 
-fn SimListenerImpl( comptime N: usize, comptime P: usize ) type {
-    return struct {
-        const Self = @This();
+const SimListenerImpl = struct {
+    dotsPaintable: *DotsPaintable,
+    widget: *GtkWidget,
 
-        // Thread-safe
-        allocator: *Allocator,
+    listener: SimListener = SimListener {
+        .addFrameFn = addFrame,
+    },
 
-        // Accessed only on GTK thread
-        paintable: *DotsPaintable,
-        widget: *GtkWidget,
-
-        // Protected by mutex
-        mutex: Mutex = Mutex {},
-        pendingCoords: ?[]GLfloat = null,
-
-        listener: SimListener(N,P) = SimListener(N,P) {
-            .setParticleCoordsFn = setParticleCoords,
-        },
-
-        /// Called on simulator thread
-        fn setParticleCoords( listener: *SimListener(N,P), xs: *const [N*P]f64 ) !void {
-            const self = @fieldParentPtr( Self, "listener", listener );
-
-            var newCoords = try self.allocator.alloc( GLfloat, xs.len );
-            for ( xs ) |x, c| {
-                newCoords[c] = @floatCast( GLfloat, x );
-            }
-
-            var oldCoords = sync: {
-                const held = self.mutex.acquire( );
-                defer held.release( );
-                var oldCoords = self.pendingCoords;
-                self.pendingCoords = newCoords;
-                break :sync oldCoords;
-            };
-
-            if ( oldCoords != null ) {
-                // We could recycle old coord slices, but it would require either
-                // moving the copy loop inside the mutex block, or complicating
-                // the mutex patern ... neither of which seems worth the trouble
-                self.allocator.free( oldCoords.? );
-            }
-
-            // We never call g_source_remove(), so the callback could stay in
-            // the queue indefinitely, which feels sloppy ... however, calling
-            // g_source_remove() later is no good, because the callback might
-            // already have run (and removed itself by returning REMOVE)
-            _ = g_timeout_add( 0, @ptrCast( GSourceFunc, updatePaintable ), self );
-        }
-
-        /// Called on GTK thread
-        fn updatePaintable( self_: *Self ) callconv(.C) guint {
-            struct {
-                fn run( self: *Self ) !void {
-                    const held = self.mutex.acquire( );
-                    defer held.release( );
-                    if ( self.pendingCoords != null ) {
-                        const newCoords = self.pendingCoords.?;
-                        defer self.pendingCoords = null;
-                        try self.paintable.coords.resize( newCoords.len );
-                        try self.paintable.coords.replaceRange( 0, newCoords.len, newCoords );
-                        self.paintable.coordsModified = true;
-                        gtk_widget_queue_draw( self.widget );
-                    }
-                }
-            }.run( self_ ) catch |e| {
-                std.debug.warn( "Failed to update dots: {}\n", .{ e } );
-                if ( @errorReturnTrace( ) ) |trace| {
-                    std.debug.dumpStackTrace( trace.* );
-                }
-            };
-            return G_SOURCE_REMOVE;
-        }
-
-        /// Called on GTK thread, after simulator thread has exited
-        pub fn deinit( self: *Self ) void {
-            var oldCoords = sync: {
-                const held = self.mutex.acquire( );
-                defer held.release( );
-                var oldCoords = self.pendingCoords;
-                self.pendingCoords = null;
-                break :sync oldCoords;
-            };
-
-            if ( oldCoords != null ) {
-                self.allocator.free( oldCoords.? );
-            }
-        }
-    };
-}
+    /// Called on simulator thread
+    fn addFrame( listener: *SimListener, t: f64, N: usize, xs: []const f64 ) !void {
+        const self = @fieldParentPtr( SimListenerImpl, "listener", listener );
+        try self.dotsPaintable.addFrame( t, N, xs );
+        gtk_widget_queue_draw( self.widget );
+    }
+};
 
 pub fn main( ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
@@ -197,8 +121,8 @@ pub fn main( ) !void {
         &springs.accelerator,
     };
 
-    const simConfig = SimConfig( N, P ) {
-        .updateInterval_MILLIS = 15,
+    const simConfig = SimConfig(N,P) {
+        .frameInterval_MILLIS = 15,
         .timestep = 500e-9,
         .xLimits = [N]Interval {
             Interval.initStartEnd( -8, 8 ),
@@ -218,7 +142,7 @@ pub fn main( ) !void {
     try timeView.init( );
 
     var spaceView = @as( SpaceView, undefined );
-    try spaceView.init( &simConfig.xLimits, allocator );
+    try spaceView.init( &simConfig.xLimits, &timeView.cursor, allocator );
 
     const splitter = gtk_paned_new( .GTK_ORIENTATION_VERTICAL );
     gtk_paned_set_wide_handle( @ptrCast( *GtkPaned, splitter ), 1 );
@@ -247,12 +171,10 @@ pub fn main( ) !void {
     _ = try gtkzConnectHandler( window, "delete-event", TimeView.deinit, &timeView );
     _ = try gtkzConnectHandler( window, "delete-event", SpaceView.deinit, &spaceView );
 
-    var simListener = SimListenerImpl(N,P) {
-        .allocator = allocator,
-        .paintable = &spaceView.dotsPaintable,
+    var simListener = SimListenerImpl {
+        .dotsPaintable = &spaceView.dotsPaintable,
         .widget = splitter,
     };
-    defer simListener.deinit( );
 
     var simRunning = Atomic( bool ).init( true );
     var simFrame = async runSimulation( N, P, &simConfig, &simListener.listener, &simRunning );
