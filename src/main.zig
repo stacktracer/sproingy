@@ -93,23 +93,31 @@ fn SpringsAcceleration( comptime N: usize, comptime P: usize ) type {
     };
 }
 
-const SimListenerImpl = struct {
-    dotsPaintable: *DotsPaintable,
-    curvePaintable: *CurvePaintable,
-    widget: *GtkWidget,
+fn WidgetRepainter( comptime N: usize, comptime P: usize ) type {
+    return struct {
+        const Self = @This();
 
-    listener: SimListener = SimListener {
-        .addFrameFn = addFrame,
-    },
+        widgets: []const *GtkWidget,
 
-    /// Called on simulator thread
-    fn addFrame( listener: *SimListener, t: f64, N: usize, xs: []const f64 ) !void {
-        const self = @fieldParentPtr( SimListenerImpl, "listener", listener );
-        try self.dotsPaintable.addFrame( t, N, xs );
-        try self.curvePaintable.addFrame( t, N, xs );
-        gtk_widget_queue_draw( self.widget );
-    }
-};
+        simListener: SimListener(N,P) = SimListener(N,P) {
+            .handleFrameFn = handleFrame,
+        },
+
+        pub fn init( widgets: []const *GtkWidget ) Self {
+            return Self {
+                .widgets = widgets,
+            };
+        }
+
+        /// Called on simulator thread
+        fn handleFrame( simListener: *SimListener(N,P), frame: *const SimFrame(N,P) ) !void {
+            const self = @fieldParentPtr( Self, "simListener", simListener );
+            for ( self.widgets ) |widget| {
+                gtk_widget_queue_draw( widget );
+            }
+        }
+    };
+}
 
 pub fn main( ) !void {
     var gpa = std.heap.GeneralPurposeAllocator( .{} ) {};
@@ -142,11 +150,11 @@ pub fn main( ) !void {
 
     try gtkzInit( allocator );
 
-    var timeView = @as( TimeView, undefined );
+    var timeView = @as( TimeView(N,P), undefined );
     try timeView.init( allocator );
     defer timeView.deinit( );
 
-    var spaceView = @as( SpaceView, undefined );
+    var spaceView = @as( SpaceView(N,P), undefined );
     try spaceView.init( &simConfig.xLimits, &timeView.cursor, allocator );
     defer spaceView.deinit( );
 
@@ -177,14 +185,17 @@ pub fn main( ) !void {
     _ = try gtkzConnectHandler( window, "delete-event", PaintingHandler.onWindowClosing, &timeView.paintingHandler );
     _ = try gtkzConnectHandler( window, "delete-event", PaintingHandler.onWindowClosing, &spaceView.paintingHandler );
 
-    var simListener = SimListenerImpl {
-        .dotsPaintable = &spaceView.dotsPaintable,
-        .curvePaintable = &timeView.curvePaintable,
-        .widget = splitter,
+    const widgets = [_]*GtkWidget { splitter };
+    var repainter = WidgetRepainter(N,P).init( &widgets );
+
+    const simListeners = [_]*SimListener(N,P) {
+        &spaceView.dotsPaintable.simListener,
+        &timeView.curvePaintable.simListener,
+        &repainter.simListener,
     };
 
     var simRunning = Atomic( bool ).init( true );
-    var simFrame = async runSimulation( N, P, &simConfig, &simListener.listener, &simRunning );
+    var simFrame = async runSimulation( N, P, &simConfig, &simListeners, &simRunning );
 
     gtk_widget_show_all( window );
     gtk_main( );

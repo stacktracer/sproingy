@@ -8,15 +8,15 @@ pub const GlzError = error {
     GenericFailure,
 };
 
-pub fn glzBufferData( target: GLenum, comptime T: type, count: usize, ptr: [*]const T, usage: GLenum ) void {
-    if ( count > 0 ) {
+pub fn glzBufferData( target: GLenum, comptime T: type, values: []const T, usage: GLenum ) void {
+    if ( values.len > 0 ) {
         const maxCount = @divTrunc( maxInt( GLsizeiptr ), @sizeOf( T ) );
-        if ( count > maxCount ) {
-            std.debug.warn( "Pushing fewer values than requested to device: requested = {d}, allowed = {d}\n", .{ count, maxCount } );
+        if ( values.len > maxCount ) {
+            std.debug.warn( "Pushing fewer values than requested to device: requested = {d}, allowed = {d}\n", .{ values.len, maxCount } );
         }
-        const actualCount = min( count, maxCount );
+        const actualCount = min( values.len, maxCount );
         const bytesCount = @intCast( GLsizeiptr, actualCount * @sizeOf( T ) );
-        const bytesPtr = @ptrCast( *const c_void, ptr );
+        const bytesPtr = @ptrCast( *const c_void, values.ptr );
         glBufferData( target, bytesCount, bytesPtr, usage );
     }
     else {

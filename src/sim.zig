@@ -47,15 +47,27 @@ pub fn Particle( comptime N: usize ) type {
     };
 }
 
-pub const SimListener = struct {
-    const Self = @This();
+pub fn SimFrame( comptime N: usize, comptime P: usize ) type {
+    return struct {
+        config: *const SimConfig(N,P),
+        t: f64,
+        ms: *const [P]f64,
+        xs: *const [N*P]f64,
+        vs: *const [N*P]f64,
+    };
+}
 
-    addFrameFn: fn ( self: *Self, t: f64, N: usize, xs: []const f64 ) anyerror!void,
+pub fn SimListener( comptime N: usize, comptime P: usize ) type {
+    return struct {
+        const Self = @This();
 
-    pub fn addFrame( self: *Self, t: f64, N: usize, xs: []const f64 ) !void {
-        return self.addFrameFn( self, t, N, xs );
-    }
-};
+        handleFrameFn: fn ( self: *Self, simFrame: *const SimFrame(N,P) ) anyerror!void,
+
+        pub fn handleFrame( self: *Self, simFrame: *const SimFrame(N,P) ) !void {
+            return self.handleFrameFn( self, simFrame );
+        }
+    };
+}
 
 /// Caller must ensure that locations pointed to by input
 /// args remain valid until after this fn returns.
@@ -63,7 +75,7 @@ pub fn runSimulation(
     comptime N: usize,
     comptime P: usize,
     config: *const SimConfig(N,P),
-    listener: *SimListener,
+    listeners: []const *SimListener(N,P),
     running: *const Atomic(bool),
 ) !void {
     // TODO: Use SIMD Vectors?
@@ -129,7 +141,16 @@ pub fn runSimulation(
         // Send particle coords to the listener periodically
         const now_PMILLIS = milliTimestamp( );
         if ( now_PMILLIS >= nextFrame_PMILLIS ) {
-            try listener.addFrame( tElapsed, N, xsCurr );
+            const frame = SimFrame(N,P) {
+                .config = config,
+                .t = tElapsed,
+                .ms = &ms,
+                .xs = xsCurr,
+                .vs = vsCurr,
+            };
+            for ( listeners ) |listener| {
+                try listener.handleFrame( &frame );
+            }
             nextFrame_PMILLIS = now_PMILLIS + frameInterval_MILLIS;
         }
 

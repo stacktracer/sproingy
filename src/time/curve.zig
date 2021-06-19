@@ -4,123 +4,133 @@ const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 usingnamespace @import( "../core/core.zig" );
 usingnamespace @import( "../core/glz.zig" );
+usingnamespace @import( "../sim.zig" );
 
-pub const CurvePaintable = struct {
-    axes: [2]*const Axis,
+pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
+    return struct {
+        const Self = @This();
 
-    rgb: [3]GLfloat,
+        axes: [2]*const Axis,
 
-    pendingCoordsMutex: Mutex,
-    pendingCoords: ArrayList(GLfloat),
-    vCoords: ArrayList(GLfloat),
+        rgb: [3]GLfloat,
 
-    prog: CurveProgram,
-    vbo: GLuint,
-    vao: GLuint,
+        pendingCoordsMutex: Mutex,
+        pendingCoords: ArrayList(GLfloat),
+        vCoords: ArrayList(GLfloat),
 
-    painter: Painter,
+        prog: CurveProgram,
+        vbo: GLuint,
+        vao: GLuint,
 
-    pub fn init( name: []const u8, axes: [2]*const Axis, allocator: *Allocator ) !CurvePaintable {
-        return CurvePaintable {
-            .axes = axes,
+        painter: Painter,
+        simListener: SimListener(N,P) = SimListener(N,P) {
+            .handleFrameFn = handleFrame,
+        },
 
-            .rgb = [3]GLfloat { 1.0, 1.0, 1.0 },
+        pub fn init( name: []const u8, axes: [2]*const Axis, allocator: *Allocator ) !Self {
+            return Self {
+                .axes = axes,
 
-            .pendingCoordsMutex = Mutex {},
-            .pendingCoords = ArrayList(GLfloat).init( allocator ),
-            .vCoords = ArrayList(GLfloat).init( allocator ),
+                .rgb = [3]GLfloat { 1.0, 1.0, 1.0 },
 
-            .prog = undefined,
-            .vbo = 0,
-            .vao = 0,
+                .pendingCoordsMutex = Mutex {},
+                .pendingCoords = ArrayList(GLfloat).init( allocator ),
+                .vCoords = ArrayList(GLfloat).init( allocator ),
 
-            .painter = Painter {
-                .name = name,
-                .glInitFn = glInit,
-                .glPaintFn = glPaint,
-                .glDeinitFn = glDeinit,
-            },
-        };
-    }
+                .prog = undefined,
+                .vbo = 0,
+                .vao = 0,
 
-    /// Safe to call from any thread
-    pub fn addFrame( self: *CurvePaintable, t: f64, N: usize, xs: []const f64 ) !void {
-        const newCoords = [_]GLfloat {
-            // FIXME
-            @floatCast( GLfloat, t ), @floatCast( GLfloat, xs[1] ),
-        };
-
-        {
-            const held = self.pendingCoordsMutex.acquire( );
-            defer held.release( );
-            try self.pendingCoords.appendSlice( &newCoords );
+                .painter = Painter {
+                    .name = name,
+                    .glInitFn = glInit,
+                    .glPaintFn = glPaint,
+                    .glDeinitFn = glDeinit,
+                },
+            };
         }
-    }
 
-    fn glInit( painter: *Painter, pc: *const PainterContext ) !void {
-        const self = @fieldParentPtr( CurvePaintable, "painter", painter );
+        /// Called on simulator thread
+        fn handleFrame( simListener: *SimListener(N,P), simFrame: *const SimFrame(N,P) ) !void {
+            const self = @fieldParentPtr( Self, "simListener", simListener );
 
-        self.prog = try CurveProgram.glCreate( );
+            const newCoords = [_]GLfloat {
+                // FIXME
+                @floatCast( GLfloat, simFrame.t ), @floatCast( GLfloat, simFrame.xs[1] ),
+            };
 
-        glGenBuffers( 1, &self.vbo );
-        glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
-
-        glGenVertexArrays( 1, &self.vao );
-        glBindVertexArray( self.vao );
-        if ( self.prog.inCoords >= 0 ) {
-            const inCoords = @intCast( GLuint, self.prog.inCoords );
-            glEnableVertexAttribArray( inCoords );
-            glVertexAttribPointer( inCoords, 2, GL_FLOAT, GL_FALSE, 0, null );
-        }
-    }
-
-    fn glPaint( painter: *Painter, pc: *const PainterContext ) !void {
-        const self = @fieldParentPtr( CurvePaintable, "painter", painter );
-
-        glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
-
-        var vCoordsModified = false;
-        {
-            const held = self.pendingCoordsMutex.acquire( );
-            defer held.release( );
-            if ( self.pendingCoords.items.len > 0 ) {
-                try self.vCoords.appendSlice( self.pendingCoords.items );
-                self.pendingCoords.items.len = 0;
-                vCoordsModified = true;
+            {
+                const held = self.pendingCoordsMutex.acquire( );
+                defer held.release( );
+                try self.pendingCoords.appendSlice( &newCoords );
             }
         }
-        if ( vCoordsModified ) {
-            glzBufferData( GL_ARRAY_BUFFER, GLfloat, self.vCoords.items.len, self.vCoords.items.ptr, GL_STATIC_DRAW );
-        }
 
-        const vCount = @divTrunc( self.vCoords.items.len, 2 );
-        if ( vCount > 0 ) {
-            const bounds = axisBounds( 2, self.axes );
+        fn glInit( painter: *Painter, pc: *const PainterContext ) !void {
+            const self = @fieldParentPtr( Self, "painter", painter );
 
-            glzEnablePremultipliedAlphaBlending( );
+            self.prog = try CurveProgram.glCreate( );
 
-            glUseProgram( self.prog.program );
-            glzUniformInterval2( self.prog.XY_BOUNDS, bounds );
-            glUniform3fv( self.prog.RGB, 1, &self.rgb );
+            glGenBuffers( 1, &self.vbo );
+            glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
 
+            glGenVertexArrays( 1, &self.vao );
             glBindVertexArray( self.vao );
-            // FIXME: Draw simple lines
-            glPointSize( 4 );
-            glDrawArrays( GL_POINTS, 0, @intCast( c_int, vCount ) ); // FIXME: Overflow
+            if ( self.prog.inCoords >= 0 ) {
+                const inCoords = @intCast( GLuint, self.prog.inCoords );
+                glEnableVertexAttribArray( inCoords );
+                glVertexAttribPointer( inCoords, 2, GL_FLOAT, GL_FALSE, 0, null );
+            }
         }
-    }
 
-    fn glDeinit( painter: *Painter ) void {
-        const self = @fieldParentPtr( CurvePaintable, "painter", painter );
-        glDeleteProgram( self.prog.program );
-        glDeleteVertexArrays( 1, &self.vao );
-        glDeleteBuffers( 1, &self.vbo );
-    }
+        fn glPaint( painter: *Painter, pc: *const PainterContext ) !void {
+            const self = @fieldParentPtr( Self, "painter", painter );
 
-    pub fn deinit( self: *CurvePaintable ) void {
-        self.vCoords.deinit( );
-    }
-};
+            glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
+
+            var vCoordsModified = false;
+            {
+                const held = self.pendingCoordsMutex.acquire( );
+                defer held.release( );
+                if ( self.pendingCoords.items.len > 0 ) {
+                    try self.vCoords.appendSlice( self.pendingCoords.items );
+                    self.pendingCoords.items.len = 0;
+                    vCoordsModified = true;
+                }
+            }
+            if ( vCoordsModified ) {
+                glzBufferData( GL_ARRAY_BUFFER, GLfloat, self.vCoords.items, GL_STATIC_DRAW );
+            }
+
+            const vCount = @divTrunc( self.vCoords.items.len, 2 );
+            if ( vCount > 0 ) {
+                const bounds = axisBounds( 2, self.axes );
+
+                glzEnablePremultipliedAlphaBlending( );
+
+                glUseProgram( self.prog.program );
+                glzUniformInterval2( self.prog.XY_BOUNDS, bounds );
+                glUniform3fv( self.prog.RGB, 1, &self.rgb );
+
+                glBindVertexArray( self.vao );
+                // FIXME: Draw simple lines
+                glPointSize( 4 );
+                glDrawArrays( GL_POINTS, 0, @intCast( c_int, vCount ) ); // FIXME: Overflow
+            }
+        }
+
+        fn glDeinit( painter: *Painter ) void {
+            const self = @fieldParentPtr( Self, "painter", painter );
+            glDeleteProgram( self.prog.program );
+            glDeleteVertexArrays( 1, &self.vao );
+            glDeleteBuffers( 1, &self.vbo );
+        }
+
+        pub fn deinit( self: *Self ) void {
+            self.vCoords.deinit( );
+        }
+    };
+}
 
 const CurveProgram = struct {
     program: GLuint,
