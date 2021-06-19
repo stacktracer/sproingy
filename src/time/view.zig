@@ -37,7 +37,7 @@ pub fn TimeView( comptime N: usize, comptime P: usize ) type {
             gtk_widget_set_can_focus( self.glArea, 1 );
 
             self.axis0 = Axis.initBounds( -0.1, 60.0, 1 );
-            self.axis1 = Axis.initBounds( -6.4, 6.4, 1 );
+            self.axis1 = Axis.initBounds( 0, 750, 1 );
             var _axes = [2]*Axis { &self.axis0, &self.axis1 };
             var _axes0 = [1]*Axis { &self.axis0 };
             var _axes1 = [1]*Axis { &self.axis1 };
