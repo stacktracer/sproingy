@@ -70,6 +70,15 @@ pub fn gtkzScaleFactor( widget: *GtkWidget ) f64 {
     return @intToFloat( f64, gtk_widget_get_scale_factor( widget ) );
 }
 
+pub fn gtkzClickCount( ev: *GdkEventButton ) u32 {
+    return switch ( ev.type ) {
+        .GDK_BUTTON_PRESS => 1,
+        .GDK_2BUTTON_PRESS => 2,
+        .GDK_3BUTTON_PRESS => 3,
+        else => 0,
+    };
+}
+
 /// Y coord increases upward.
 pub fn gtkzMousePos_PX( widget: *GtkWidget, ev: anytype ) [2]f64 {
     // The event also knows what window and device it came from ...

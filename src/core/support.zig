@@ -166,14 +166,19 @@ pub const DraggingHandler = struct {
     }
 
     pub fn onMouseDown( widget: *GtkWidget, ev: *GdkEventButton, self: *DraggingHandler ) callconv(.C) gboolean {
-        if ( self.activeDragger == null and ev.button == 1 ) {
+        const clickCount = gtkzClickCount( ev );
+        if ( ev.button == 1 and clickCount >= 1 ) {
             const mouse_PX = gtkzMousePos_PX( widget, ev );
             const context = DraggerContext {
                 .lpxToPx = gtkzScaleFactor( widget ),
             };
-            self.activeDragger = findDragger( self.draggers, context, mouse_PX );
-            if ( self.activeDragger != null ) {
-                self.activeDragger.?.handlePress( context, mouse_PX );
+            const newDragger = findDragger( self.draggers, context, mouse_PX, clickCount );
+            if ( newDragger != null and newDragger != self.activeDragger ) {
+                if ( self.activeDragger != null ) {
+                    self.activeDragger.?.handleRelease( context, mouse_PX );
+                }
+                self.activeDragger = newDragger;
+                self.activeDragger.?.handlePress( context, mouse_PX, clickCount );
                 gtk_widget_queue_draw( widget );
             }
         }
@@ -205,9 +210,9 @@ pub const DraggingHandler = struct {
         return 1;
     }
 
-    fn findDragger( draggers: []const *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) ?*Dragger {
+    fn findDragger( draggers: []const *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) ?*Dragger {
         for ( draggers ) |dragger| {
-            if ( dragger.canHandlePress( context, mouse_PX ) ) {
+            if ( dragger.canHandlePress( context, mouse_PX, clickCount ) ) {
                 return dragger;
             }
         }

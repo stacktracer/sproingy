@@ -87,9 +87,8 @@ pub const SpaceView = struct {
     }
 
     pub fn deinit( self: *SpaceView ) void {
-        // FIXME: Drop self.glArea
-        // FIXME: Drop self.paintingHandler
+        // FIXME: gtk_widget_destroy( self.glArea );
+        self.dotsPaintable.deinit( );
         // FIXME: Disconnect signal handlers
-        // FIXME: glDeinit
     }
 };

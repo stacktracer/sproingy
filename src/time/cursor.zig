@@ -1,3 +1,4 @@
+const std = @import( "std" );
 usingnamespace @import( "../core/core.zig" );
 usingnamespace @import( "../core/glz.zig" );
 
@@ -91,19 +92,30 @@ pub const VerticalCursor = struct {
         glDeleteBuffers( 1, &self.vbo );
     }
 
-    fn canHandlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) bool {
+    fn canHandlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) bool {
         const self = @fieldParentPtr( VerticalCursor, "dragger", dragger );
-        const mouseFrac = self.axis.viewport_PX.valueToFrac( mouse_PX[0] );
-        const mouseCoord = self.axis.bounds( ).fracToValue( mouseFrac );
-        const offset = self.cursor - mouseCoord;
-        return ( @fabs( offset * self.axis.scale ) <= self.thickness_LPX * context.lpxToPx );
+        if ( clickCount > 1 ) {
+            return true;
+        }
+        else {
+            const mouseFrac = self.axis.viewport_PX.valueToFrac( mouse_PX[0] );
+            const mouseCoord = self.axis.bounds( ).fracToValue( mouseFrac );
+            const offset = self.cursor - mouseCoord;
+            return ( @fabs( offset * self.axis.scale ) <= self.thickness_LPX * context.lpxToPx );
+        }
     }
 
-    fn handlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void {
+    fn handlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) void {
         const self = @fieldParentPtr( VerticalCursor, "dragger", dragger );
         const mouseFrac = self.axis.viewport_PX.valueToFrac( mouse_PX[0] );
         const mouseCoord = self.axis.bounds( ).fracToValue( mouseFrac );
-        self.dragOffset = self.cursor - mouseCoord;
+        if ( clickCount == 1 ) {
+            self.dragOffset = self.cursor - mouseCoord;
+        }
+        else if ( clickCount > 1 ) {
+            self.cursor = mouseCoord;
+            self.dragOffset = 0;
+        }
     }
 
     fn handleDrag( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void {

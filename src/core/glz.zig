@@ -1,10 +1,28 @@
 const std = @import( "std" );
+const min = std.math.min;
+const maxInt = std.math.maxInt;
 pub usingnamespace @import( "c.zig" );
 usingnamespace @import( "util.zig" );
 
 pub const GlzError = error {
     GenericFailure,
 };
+
+pub fn glzBufferData( target: GLenum, comptime T: type, count: usize, ptr: [*]const T, usage: GLenum ) void {
+    if ( count > 0 ) {
+        const maxCount = @divTrunc( maxInt( GLsizeiptr ), @sizeOf( T ) );
+        if ( count > maxCount ) {
+            std.debug.warn( "Pushing fewer values than requested to device: requested = {d}, allowed = {d}\n", .{ count, maxCount } );
+        }
+        const actualCount = min( count, maxCount );
+        const bytesCount = @intCast( GLsizeiptr, actualCount * @sizeOf( T ) );
+        const bytesPtr = @ptrCast( *const c_void, ptr );
+        glBufferData( target, bytesCount, bytesPtr, usage );
+    }
+    else {
+        // FIXME: glBufferData with null?
+    }
+}
 
 pub fn glzCreateProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) !GLuint {
     const vertShader = try glzCompileShaderSource( GL_VERTEX_SHADER, vertSource );

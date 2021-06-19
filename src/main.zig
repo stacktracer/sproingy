@@ -5,9 +5,11 @@ const Allocator = std.mem.Allocator;
 usingnamespace @import( "core/util.zig" );
 usingnamespace @import( "core/core.zig" );
 usingnamespace @import( "core/gtkz.zig" );
+usingnamespace @import( "core/support.zig" );
 usingnamespace @import( "space/view.zig" );
 usingnamespace @import( "space/dots.zig" );
 usingnamespace @import( "time/view.zig" );
+usingnamespace @import( "time/curve.zig" );
 usingnamespace @import( "sim.zig" );
 
 // TODO: Understand why this magic makes async/await work sensibly
@@ -93,6 +95,7 @@ fn SpringsAcceleration( comptime N: usize, comptime P: usize ) type {
 
 const SimListenerImpl = struct {
     dotsPaintable: *DotsPaintable,
+    curvePaintable: *CurvePaintable,
     widget: *GtkWidget,
 
     listener: SimListener = SimListener {
@@ -103,6 +106,7 @@ const SimListenerImpl = struct {
     fn addFrame( listener: *SimListener, t: f64, N: usize, xs: []const f64 ) !void {
         const self = @fieldParentPtr( SimListenerImpl, "listener", listener );
         try self.dotsPaintable.addFrame( t, N, xs );
+        try self.curvePaintable.addFrame( t, N, xs );
         gtk_widget_queue_draw( self.widget );
     }
 };
@@ -139,10 +143,12 @@ pub fn main( ) !void {
     try gtkzInit( allocator );
 
     var timeView = @as( TimeView, undefined );
-    try timeView.init( );
+    try timeView.init( allocator );
+    defer timeView.deinit( );
 
     var spaceView = @as( SpaceView, undefined );
     try spaceView.init( &simConfig.xLimits, &timeView.cursor, allocator );
+    defer spaceView.deinit( );
 
     const splitter = gtk_paned_new( .GTK_ORIENTATION_VERTICAL );
     gtk_paned_set_wide_handle( @ptrCast( *GtkPaned, splitter ), 1 );
@@ -168,11 +174,12 @@ pub fn main( ) !void {
 
     var quittingHandler = QuittingHandler.init( );
     _ = try gtkzConnectHandler( window, "delete-event", QuittingHandler.onWindowClosing, &quittingHandler );
-    _ = try gtkzConnectHandler( window, "delete-event", TimeView.deinit, &timeView );
-    _ = try gtkzConnectHandler( window, "delete-event", SpaceView.deinit, &spaceView );
+    _ = try gtkzConnectHandler( window, "delete-event", PaintingHandler.onWindowClosing, &timeView.paintingHandler );
+    _ = try gtkzConnectHandler( window, "delete-event", PaintingHandler.onWindowClosing, &spaceView.paintingHandler );
 
     var simListener = SimListenerImpl {
         .dotsPaintable = &spaceView.dotsPaintable,
+        .curvePaintable = &timeView.curvePaintable,
         .widget = splitter,
     };
 

@@ -88,7 +88,7 @@ pub fn AxisDraggable( comptime N: usize ) type {
             };
         }
 
-        fn canHandlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) bool {
+        fn canHandlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) bool {
             const self = @fieldParentPtr( Self, "dragger", dragger );
             for ( self.axes ) |axis, n| {
                 const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
@@ -99,7 +99,7 @@ pub fn AxisDraggable( comptime N: usize ) type {
             return true;
         }
 
-        fn handlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void {
+        fn handlePress( dragger: *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) void {
             const self = @fieldParentPtr( Self, "dragger", dragger );
             for ( self.axes ) |axis, n| {
                 const mouseFrac = axis.viewport_PX.valueToFrac( mouse_PX[ self.screenCoordIndices[n] ] );
@@ -130,17 +130,17 @@ pub const DraggerContext = struct {
 };
 
 pub const Dragger = struct {
-    canHandlePressFn: fn ( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) bool,
-    handlePressFn: fn ( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void,
+    canHandlePressFn: fn ( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) bool,
+    handlePressFn: fn ( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) void,
     handleDragFn: fn ( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void,
     handleReleaseFn: fn ( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void,
 
-    pub fn canHandlePress( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) bool {
-        return self.canHandlePressFn( self, context, mouse_PX );
+    pub fn canHandlePress( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) bool {
+        return self.canHandlePressFn( self, context, mouse_PX, clickCount );
     }
 
-    pub fn handlePress( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void {
-        self.handlePressFn( self, context, mouse_PX );
+    pub fn handlePress( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64, clickCount: u32 ) void {
+        self.handlePressFn( self, context, mouse_PX, clickCount );
     }
 
     pub fn handleDrag( self: *Dragger, context: DraggerContext, mouse_PX: [2]f64 ) void {

@@ -1,6 +1,4 @@
 const std = @import( "std" );
-const min = std.math.min;
-const maxInt = std.math.maxInt;
 const Mutex = std.Thread.Mutex;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
@@ -168,14 +166,18 @@ pub const DotsPaintable = struct {
         {
             const held = self.pendingFramesMutex.acquire( );
             defer held.release( );
-            for ( self.pendingFrames.items ) |frame| {
-                frame.deinit( );
+            for ( self.pendingFrames.items ) |frame, i| {
+                // TODO: Not sure why the compiler objects here
+                // frame.deinit( );
+                self.pendingFrames.items[i].deinit( );
             }
             self.pendingFrames.deinit( );
         }
 
-        for ( self.frames.items ) |frame| {
-            frame.deinit( );
+        for ( self.frames.items ) |frame, i| {
+            // TODO: Not sure why the compiler objects here
+            // frame.deinit( );
+            self.frames.items[i].deinit( );
         }
         self.frames.deinit( );
     }
@@ -203,13 +205,7 @@ const DotsFrame = struct {
         if ( !self._glValid ) {
             glGenBuffers( 1, &self._glBuffer );
             glBindBuffer( GL_ARRAY_BUFFER, self._glBuffer );
-            if ( self.xs.len > 0 ) {
-                const maxFloatsCount = @divTrunc( maxInt( GLsizeiptr ), @sizeOf( GLfloat ) );
-                const floatsCount = min( self.xs.len, maxFloatsCount );
-                const bytesCount = @intCast( GLsizeiptr, floatsCount * @sizeOf( GLfloat ) );
-                const bytesPtr = @ptrCast( *const c_void, self.xs.ptr );
-                glBufferData( GL_ARRAY_BUFFER, bytesCount, bytesPtr, GL_STATIC_DRAW );
-            }
+            glzBufferData( GL_ARRAY_BUFFER, GLfloat, self.xs.len, self.xs.ptr, GL_STATIC_DRAW );
             self._glValid = true;
         }
         return self._glBuffer;
