@@ -157,17 +157,13 @@ pub fn DotsPaintable( comptime N: usize, comptime P: usize ) type {
             {
                 const held = self.pendingFramesMutex.acquire( );
                 defer held.release( );
-                for ( self.pendingFrames.items ) |frame, i| {
-                    // TODO: Not sure why the compiler complains here
-                    // frame.glDeinit( );
-                    self.pendingFrames.items[i].glDeinit( );
+                for ( self.pendingFrames.items ) |frame| {
+                    frame.glDeinit( );
                 }
             }
 
-            for ( self.frames.items ) |frame, i| {
-                // TODO: Not sure why the compiler complains here
-                // frame.glDeinit( );
-                self.frames.items[i].glDeinit( );
+            for ( self.frames.items ) |frame| {
+                frame.glDeinit( );
             }
         }
 
