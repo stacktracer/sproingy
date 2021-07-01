@@ -1,4 +1,6 @@
 const std = @import( "std" );
+const ArrayList = std.ArrayList;
+const Allocator = std.mem.Allocator;
 pub usingnamespace @import( "c.zig" );
 
 pub const GtkzError = error {
@@ -9,6 +11,35 @@ pub const GtkzHandlerConnection = struct {
     instance: gpointer,
     handlerId: gulong,
 };
+
+pub fn gtkzInit( allocator: *Allocator ) !void {
+    // TODO: Probably need some errdefers
+    var it = std.process.args( );
+    defer it.deinit( );
+
+    var args = ArrayList( [:0]u8 ).init( allocator );
+    defer {
+        for ( args.items ) |arg| {
+            allocator.free( arg );
+        }
+        args.deinit( );
+    }
+
+    var argsAsCstrs = ArrayList( [*c]u8 ).init( allocator );
+    defer argsAsCstrs.deinit( );
+
+    while ( true ) {
+        const arg = try ( it.next( allocator ) orelse break );
+        try args.append( arg );
+        try argsAsCstrs.append( arg.ptr );
+    }
+
+    var argc = @intCast( c_int, argsAsCstrs.items.len );
+    var argv = @as( [*c][*c]u8, argsAsCstrs.items.ptr );
+    if ( gtk_init_check( &argc, &argv ) != 1 ) {
+        return GtkzError.GenericFailure;
+    }
+}
 
 pub fn gtkzConnectHandler( instance: gpointer, signalName: [*c]const gchar, handlerFn: anytype, userData: gpointer ) !GtkzHandlerConnection {
     return GtkzHandlerConnection {
@@ -39,6 +70,15 @@ pub fn gtkzScaleFactor( widget: *GtkWidget ) f64 {
     return @intToFloat( f64, gtk_widget_get_scale_factor( widget ) );
 }
 
+pub fn gtkzClickCount( ev: *GdkEventButton ) u32 {
+    return switch ( ev.type ) {
+        .GDK_BUTTON_PRESS => 1,
+        .GDK_2BUTTON_PRESS => 2,
+        .GDK_3BUTTON_PRESS => 3,
+        else => 0,
+    };
+}
+
 /// Y coord increases upward.
 pub fn gtkzMousePos_PX( widget: *GtkWidget, ev: anytype ) [2]f64 {
     // The event also knows what window and device it came from ...
@@ -61,6 +101,25 @@ pub fn gtkzMousePos_PX( widget: *GtkWidget, ev: anytype ) [2]f64 {
         mouse_PX[n] = scale*coord_LPX + 0.5;
     }
     return mouse_PX;
+}
+
+pub fn gtkzWheelSteps( ev: *GdkEventScroll ) f64 {
+    var direction: GdkScrollDirection = undefined;
+    if ( gdk_event_get_scroll_direction( @ptrCast( *GdkEvent, ev ), &direction ) != 0 ) {
+        return switch ( direction ) {
+            .GDK_SCROLL_UP => 1.0,
+            .GDK_SCROLL_DOWN => -1.0,
+            else => 0.0,
+        };
+    }
+
+    var xDelta: f64 = undefined;
+    var yDelta: f64 = undefined;
+    if ( gdk_event_get_scroll_deltas( @ptrCast( *GdkEvent, ev ), &xDelta, &yDelta ) != 0 ) {
+        return yDelta;
+    }
+
+    return 0.0;
 }
 
 pub fn gtkz_signal_connect( instance: gpointer, signalName: [*c]const gchar, handler: GCallback, userData: gpointer ) !gulong {
@@ -88,11 +147,11 @@ pub const FullscreenKeysHandler = struct {
         // TODO: Use a hash set
         for ( self.keyvals ) |keyval| {
             if ( ev.keyval == keyval ) {
-                const gdkWindow = gtk_widget_get_window( widget );
-                if ( gdkWindow != null ) {
-                    const gtkAncestor = gtk_widget_get_toplevel( widget );
-                    if ( gtk_widget_is_toplevel( gtkAncestor ) == 1 ) {
-                        const gtkWindow = @ptrCast( *GtkWindow, gtkAncestor );
+                const gtkAncestor = gtk_widget_get_toplevel( widget );
+                if ( gtk_widget_is_toplevel( gtkAncestor ) == 1 ) {
+                    const gtkWindow = @ptrCast( *GtkWindow, gtkAncestor );
+                    const gdkWindow = gtk_widget_get_window( gtkAncestor );
+                    if ( gdkWindow != null ) {
                         const windowState = gdk_window_get_state( gdkWindow );
                         if ( @enumToInt( windowState ) & GDK_WINDOW_STATE_FULLSCREEN != 0 ) {
                             gtk_window_unfullscreen( gtkWindow );

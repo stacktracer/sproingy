@@ -1,10 +1,28 @@
 const std = @import( "std" );
+const min = std.math.min;
+const maxInt = std.math.maxInt;
 pub usingnamespace @import( "c.zig" );
-usingnamespace @import( "axis.zig" );
+usingnamespace @import( "util.zig" );
 
 pub const GlzError = error {
     GenericFailure,
 };
+
+pub fn glzBufferData( target: GLenum, comptime T: type, values: []const T, usage: GLenum ) void {
+    if ( values.len > 0 ) {
+        const maxCount = @divTrunc( maxInt( GLsizeiptr ), @sizeOf( T ) );
+        if ( values.len > maxCount ) {
+            std.debug.warn( "Pushing fewer values than requested to device: requested = {d}, allowed = {d}\n", .{ values.len, maxCount } );
+        }
+        const actualCount = min( values.len, maxCount );
+        const bytesCount = @intCast( GLsizeiptr, actualCount * @sizeOf( T ) );
+        const bytesPtr = @ptrCast( *const c_void, values.ptr );
+        glBufferData( target, bytesCount, bytesPtr, usage );
+    }
+    else {
+        // FIXME: glBufferData with null?
+    }
+}
 
 pub fn glzCreateProgram( vertSource: [*:0]const u8, fragSource: [*:0]const u8 ) !GLuint {
     const vertShader = try glzCompileShaderSource( GL_VERTEX_SHADER, vertSource );
@@ -72,6 +90,18 @@ pub fn glzDisableBlending( ) void {
     glDisable( GL_BLEND );
 }
 
+pub fn glzHasCurrentContext( ) bool {
+    var major: GLint = -1;
+    glGetIntegerv( GL_MAJOR_VERSION, &major );
+    return ( major != -1 );
+}
+
+pub fn glzUniformInterval1( location: GLint, interval: Interval ) void {
+    glUniform2f( location,
+                 @floatCast( f32, interval.start ),
+                 @floatCast( f32, interval.span ) );
+}
+
 pub fn glzUniformInterval2( location: GLint, interval: [2]Interval ) void {
     glUniform4f( location,
                  @floatCast( f32, interval[0].start ),
@@ -91,29 +121,4 @@ pub fn glzGetViewport_PX( ) [2]Interval {
         Interval.init( x, w ),
         Interval.init( y, h ),
     };
-}
-
-pub fn glzWheelSteps( ev: *GdkEventScroll ) f64 {
-    var direction: GdkScrollDirection = undefined;
-    if ( gdk_event_get_scroll_direction( @ptrCast( *GdkEvent, ev ), &direction ) != 0 ) {
-        return switch ( direction ) {
-            .GDK_SCROLL_UP => 1.0,
-            .GDK_SCROLL_DOWN => -1.0,
-            else => 0.0,
-        };
-    }
-
-    var xDelta: f64 = undefined;
-    var yDelta: f64 = undefined;
-    if ( gdk_event_get_scroll_deltas( @ptrCast( *GdkEvent, ev ), &xDelta, &yDelta ) != 0 ) {
-        return yDelta;
-    }
-
-    return 0.0;
-}
-
-pub fn glzHasCurrentContext( ) bool {
-    var major: GLint = -1;
-    glGetIntegerv( GL_MAJOR_VERSION, &major );
-    return ( major != -1 );
 }

@@ -3,13 +3,13 @@ const min = std.math.min;
 const max = std.math.max;
 const sqrt = std.math.sqrt;
 const minInt = std.math.minInt;
-const milliTimestamp = std.time.milliTimestamp;
 const Atomic = std.atomic.Atomic;
-usingnamespace @import( "util/axis.zig" );
+const milliTimestamp = std.time.milliTimestamp;
+usingnamespace @import( "core/util.zig" );
 
 pub fn SimConfig( comptime N: usize, comptime P: usize ) type {
     return struct {
-        updateInterval_MILLIS: i64,
+        frameInterval_MILLIS: i64,
         timestep: f64,
         xLimits: [N]Interval,
         particles: [P]Particle(N),
@@ -21,10 +21,15 @@ pub fn Accelerator( comptime N: usize, comptime P: usize ) type {
     return struct {
         const Self = @This();
 
-        addAccelerationFn: fn ( self: *const Self, xs: *const [N*P]f64, ms: [P]f64, p: usize, xp: [N]f64, aSum_OUT: *[N]f64 ) void,
+        addAccelerationFn: fn ( self: *const Self, xs: *const [N*P]f64, ms: *const [P]f64, p: usize, x: [N]f64, aSum_OUT: *[N]f64 ) void,
+        computePotentialEnergyFn: fn ( self: *const Self, xs: *const [N*P]f64, ms: *const [P]f64 ) f64,
 
-        pub fn addAcceleration( self: *const Self, xs: *const [N*P]f64, ms: [P]f64, p: usize, xp: [N]f64, aSum_OUT: *[N]f64 ) void {
-            return self.addAccelerationFn( self, xs, ms, p, xp, aSum_OUT );
+        pub fn addAcceleration( self: *const Self, xs: *const [N*P]f64, ms: *const [P]f64, p: usize, x: [N]f64, aSum_OUT: *[N]f64 ) void {
+            return self.addAccelerationFn( self, xs, ms, p, x, aSum_OUT );
+        }
+
+        pub fn computePotentialEnergy( self: *const Self, xs: *const [N*P]f64, ms: *const [P]f64 ) f64 {
+            return self.computePotentialEnergyFn( self, xs, ms );
         }
     };
 }
@@ -47,14 +52,24 @@ pub fn Particle( comptime N: usize ) type {
     };
 }
 
+pub fn SimFrame( comptime N: usize, comptime P: usize ) type {
+    return struct {
+        config: *const SimConfig(N,P),
+        t: f64,
+        ms: *const [P]f64,
+        xs: *const [N*P]f64,
+        vs: *const [N*P]f64,
+    };
+}
+
 pub fn SimListener( comptime N: usize, comptime P: usize ) type {
     return struct {
         const Self = @This();
 
-        setParticleCoordsFn: fn ( self: *Self, xs: *const [N*P]f64 ) anyerror!void,
+        handleFrameFn: fn ( self: *Self, simFrame: *const SimFrame(N,P) ) anyerror!void,
 
-        pub fn setParticleCoords( self: *Self, xs: *const [N*P]f64 ) !void {
-            return self.setParticleCoordsFn( self, xs );
+        pub fn handleFrame( self: *Self, simFrame: *const SimFrame(N,P) ) !void {
+            return self.handleFrameFn( self, simFrame );
         }
     };
 }
@@ -65,7 +80,7 @@ pub fn runSimulation(
     comptime N: usize,
     comptime P: usize,
     config: *const SimConfig(N,P),
-    listener: *SimListener(N,P),
+    listeners: []const *SimListener(N,P),
     running: *const Atomic(bool),
 ) !void {
     // TODO: Use SIMD Vectors?
@@ -78,14 +93,15 @@ pub fn runSimulation(
     const tHalf = 0.5*tFull;
     const accelerators = config.accelerators;
 
-    var ms = @as( [P]f64, undefined );
+    var msArray = @as( [P]f64, undefined );
     var xsStart = @as( [N*P]f64, undefined );
     var vsStart = @as( [N*P]f64, undefined );
     for ( config.particles ) |particle, p| {
-        ms[p] = particle.m;
+        msArray[p] = particle.m;
         xsStart[ p*N.. ][ 0..N ].* = particle.x;
         vsStart[ p*N.. ][ 0..N ].* = particle.v;
     }
+    const ms = &msArray;
 
     var xMins = @as( [N]f64, undefined );
     var xMaxs = @as( [N]f64, undefined );
@@ -124,14 +140,24 @@ pub fn runSimulation(
         }
     }
 
-    const updateInterval_MILLIS = config.updateInterval_MILLIS;
-    var nextUpdate_PMILLIS = @as( i64, minInt( i64 ) );
-    while ( running.load( .SeqCst ) ) {
+    const frameInterval_MILLIS = config.frameInterval_MILLIS;
+    var nextFrame_PMILLIS = @as( i64, minInt( i64 ) );
+    var tElapsed = @as( f64, 0 );
+    while ( running.load( .SeqCst ) ) : ( tElapsed += tFull ) {
         // Send particle coords to the listener periodically
         const now_PMILLIS = milliTimestamp( );
-        if ( now_PMILLIS >= nextUpdate_PMILLIS ) {
-            try listener.setParticleCoords( xsCurr );
-            nextUpdate_PMILLIS = now_PMILLIS + updateInterval_MILLIS;
+        if ( now_PMILLIS >= nextFrame_PMILLIS ) {
+            const frame = SimFrame(N,P) {
+                .config = config,
+                .t = tElapsed,
+                .ms = ms,
+                .xs = xsCurr,
+                .vs = vsCurr,
+            };
+            for ( listeners ) |listener| {
+                try listener.handleFrame( &frame );
+            }
+            nextFrame_PMILLIS = now_PMILLIS + frameInterval_MILLIS;
         }
 
         // Update particle coords, but without checking for bounces
