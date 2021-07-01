@@ -12,8 +12,14 @@ usingnamespace @import( "time/view.zig" );
 usingnamespace @import( "time/curve.zig" );
 usingnamespace @import( "sim.zig" );
 
-// TODO: Understand why this magic makes async/await work sensibly
+// Allow async/await to use multiple threads
 pub const io_mode = .evented;
+
+fn doRunSimulation( comptime N: usize, comptime P: usize, config: *const SimConfig(N,P), listeners: []const *SimListener(N,P), running: *const Atomic(bool) ) !void {
+    // Indicate to the async/await mechanism that we're going to monopolize a thread
+    std.event.Loop.startCpuBoundOperation( );
+    try runSimulation( N, P, config, listeners, running );
+}
 
 fn ConstantAcceleration( comptime N: usize, comptime P: usize ) type {
     return struct {
@@ -256,7 +262,7 @@ pub fn main( ) !void {
     };
 
     var simRunning = Atomic( bool ).init( true );
-    var simFrame = async runSimulation( N, P, &simConfig, &simListeners, &simRunning );
+    var simFrame = async doRunSimulation( N, P, &simConfig, &simListeners, &simRunning );
 
     gtk_widget_show_all( window );
     gtk_main( );

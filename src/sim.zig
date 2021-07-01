@@ -86,9 +86,6 @@ pub fn runSimulation(
     // TODO: Use SIMD Vectors?
     // TODO: Multi-thread? (If so, avoid false sharing)
 
-    // TODO: Understand why this magic makes async/await work sensibly
-    std.event.Loop.startCpuBoundOperation( );
-
     const tFull = config.timestep;
     const tHalf = 0.5*tFull;
     const accelerators = config.accelerators;
