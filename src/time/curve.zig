@@ -54,20 +54,25 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
         fn handleFrame( simListener: *SimListener(N,P), simFrame: *const SimFrame(N,P) ) !void {
             const self = @fieldParentPtr( Self, "simListener", simListener );
 
-            var p = @as( usize, 0 );
             var totalKineticEnergy = @as( f64, 0.0 );
-            while ( p < P ) : ( p += 1 ) {
-                const m = simFrame.ms[ p ];
+            for ( simFrame.ms ) |m,p| {
+                var vSquared = @as( f64, 0.0 );
                 for ( simFrame.vs[ p*N.. ][ 0..N ] ) |v| {
-                    totalKineticEnergy += m * v*v;
+                    vSquared += v*v;
                 }
+                totalKineticEnergy += 0.5 * m * vSquared;
             }
 
-            // TODO: Add in potential energy from simFrame.config.accelerators
+            var totalPotentialEnergy = @as( f64, 0.0 );
+            for ( simFrame.config.accelerators ) |accelerator| {
+                totalPotentialEnergy += accelerator.computePotentialEnergy( simFrame.xs, simFrame.ms );
+            }
+
+            const totalEnergy = totalKineticEnergy + totalPotentialEnergy;
 
             const newCoords = [_]GLfloat {
                 @floatCast( GLfloat, simFrame.t ),
-                @floatCast( GLfloat, totalKineticEnergy ),
+                @floatCast( GLfloat, totalEnergy ),
             };
 
             {

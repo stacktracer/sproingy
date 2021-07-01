@@ -21,10 +21,15 @@ pub fn Accelerator( comptime N: usize, comptime P: usize ) type {
     return struct {
         const Self = @This();
 
-        addAccelerationFn: fn ( self: *const Self, xs: *const [N*P]f64, ms: [P]f64, p: usize, xp: [N]f64, aSum_OUT: *[N]f64 ) void,
+        addAccelerationFn: fn ( self: *const Self, xs: *const [N*P]f64, ms: *const [P]f64, p: usize, x: [N]f64, aSum_OUT: *[N]f64 ) void,
+        computePotentialEnergyFn: fn ( self: *const Self, xs: *const [N*P]f64, ms: *const [P]f64 ) f64,
 
-        pub fn addAcceleration( self: *const Self, xs: *const [N*P]f64, ms: [P]f64, p: usize, xp: [N]f64, aSum_OUT: *[N]f64 ) void {
-            return self.addAccelerationFn( self, xs, ms, p, xp, aSum_OUT );
+        pub fn addAcceleration( self: *const Self, xs: *const [N*P]f64, ms: *const [P]f64, p: usize, x: [N]f64, aSum_OUT: *[N]f64 ) void {
+            return self.addAccelerationFn( self, xs, ms, p, x, aSum_OUT );
+        }
+
+        pub fn computePotentialEnergy( self: *const Self, xs: *const [N*P]f64, ms: *const [P]f64 ) f64 {
+            return self.computePotentialEnergyFn( self, xs, ms );
         }
     };
 }
@@ -88,14 +93,15 @@ pub fn runSimulation(
     const tHalf = 0.5*tFull;
     const accelerators = config.accelerators;
 
-    var ms = @as( [P]f64, undefined );
+    var msArray = @as( [P]f64, undefined );
     var xsStart = @as( [N*P]f64, undefined );
     var vsStart = @as( [N*P]f64, undefined );
     for ( config.particles ) |particle, p| {
-        ms[p] = particle.m;
+        msArray[p] = particle.m;
         xsStart[ p*N.. ][ 0..N ].* = particle.x;
         vsStart[ p*N.. ][ 0..N ].* = particle.v;
     }
+    const ms = &msArray;
 
     var xMins = @as( [N]f64, undefined );
     var xMaxs = @as( [N]f64, undefined );
@@ -144,7 +150,7 @@ pub fn runSimulation(
             const frame = SimFrame(N,P) {
                 .config = config,
                 .t = tElapsed,
-                .ms = &ms,
+                .ms = ms,
                 .xs = xsCurr,
                 .vs = vsCurr,
             };

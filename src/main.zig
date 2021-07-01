@@ -20,22 +20,49 @@ fn ConstantAcceleration( comptime N: usize, comptime P: usize ) type {
         const Self = @This();
 
         acceleration: [N]f64,
-        accelerator: Accelerator(N,P),
+        xLimits: [N]Interval,
 
-        pub fn init( acceleration: [N]f64 ) Self {
+        accelerator: Accelerator(N,P) = .{
+            .addAccelerationFn = addAcceleration,
+            .computePotentialEnergyFn = computePotentialEnergy,
+        },
+
+        pub fn init( acceleration: [N]f64, xLimits: [N]Interval ) Self {
             return .{
                 .acceleration = acceleration,
-                .accelerator = .{
-                    .addAccelerationFn = addAcceleration,
-                },
+                .xLimits = xLimits,
             };
         }
 
-        fn addAcceleration( accelerator: *const Accelerator(N,P), xs: *const [N*P]f64, ms: [P]f64, p: usize, xp: [N]f64, aSum_OUT: *[N]f64 ) void {
+        fn addAcceleration( accelerator: *const Accelerator(N,P), xs: *const [N*P]f64, ms: *const [P]f64, p: usize, x: [N]f64, aSum_OUT: *[N]f64 ) void {
             const self = @fieldParentPtr( Self, "accelerator", accelerator );
             for ( self.acceleration ) |a_n, n| {
                 aSum_OUT[n] += a_n;
             }
+        }
+
+        fn computePotentialEnergy( accelerator: *const Accelerator(N,P), xs: *const [N*P]f64, ms: *const [P]f64 ) f64 {
+            const self = @fieldParentPtr( Self, "accelerator", accelerator );
+            const a = self.acceleration;
+
+            var xZeroPotential = @as( [N]f64, undefined );
+            for ( a ) |a_n, n| {
+                if ( a_n < 0 ) {
+                    xZeroPotential[n] = self.xLimits[n].start;
+                }
+                else {
+                    xZeroPotential[n] = self.xLimits[n].end( );
+                }
+            }
+
+            var totalPotentialEnergy = @as( f64, 0.0 );
+            for ( ms ) |m, p| {
+                for ( a ) |a_n, n| {
+                    const x_n = xs[ p*N + n ];
+                    totalPotentialEnergy += m * -a_n * ( x_n - xZeroPotential[n] );
+                }
+            }
+            return totalPotentialEnergy;
         }
     };
 }
@@ -54,41 +81,73 @@ fn SpringsAcceleration( comptime N: usize, comptime P: usize ) type {
                 .stiffness = stiffness,
                 .accelerator = .{
                     .addAccelerationFn = addAcceleration,
+                    .computePotentialEnergyFn = computePotentialEnergy,
                 },
             };
         }
 
-        fn addAcceleration( accelerator: *const Accelerator(N,P), xs: *const [N*P]f64, ms: [P]f64, p: usize, xp: [N]f64, aSum_OUT: *[N]f64 ) void {
+        fn addAcceleration( accelerator: *const Accelerator(N,P), xs: *const [N*P]f64, ms: *const [P]f64, p: usize, x: [N]f64, aSum_OUT: *[N]f64 ) void {
             const self = @fieldParentPtr( Self, "accelerator", accelerator );
-            const factorA = self.stiffness / ms[p];
+            const stiffnessOverMass = self.stiffness / ms[p];
 
-            const c0 = p * N;
-
-            var b0 = @as( usize, 0 );
-            while ( b0 < N*P ) : ( b0 += N ) {
-                if ( b0 != c0 ) {
-                    const xq = xs[ b0.. ][ 0..N ];
+            const pA = p;
+            const xA = x;
+            var pB = @as( usize, 0 );
+            while ( pB < P ) : ( pB += 1 ) {
+                if ( pB != pA ) {
+                    const xB = xs[ pB*N.. ][ 0..N ];
 
                     var d = @as( [N]f64, undefined );
                     var dMagSquared = @as( f64, 0.0 );
-                    for ( xq ) |xq_n, n| {
-                        const d_n = xq_n - xp[n];
+                    for ( xB ) |xB_n, n| {
+                        const d_n = xB_n - xA[n];
                         d[n] = d_n;
                         dMagSquared += d_n * d_n;
                     }
                     const dMag = sqrt( dMagSquared );
-
                     const offsetFromRest = dMag - self.restLength;
-                    const factorB = factorA * offsetFromRest / dMag;
+
+                    const factor = stiffnessOverMass * offsetFromRest / dMag;
                     for ( d ) |d_n, n| {
                         // F = stiffness * offsetFromRest * d[n]/dMag
                         // a = F / m
                         //   = ( stiffness * offsetFromRest * d[n]/dMag ) / m
                         //   = ( stiffness / m )*( offsetFromRest / dMag )*d[n]
-                        aSum_OUT[n] += factorB * d_n;
+                        aSum_OUT[n] += factor * d_n;
                     }
                 }
             }
+        }
+
+        fn computePotentialEnergy( accelerator: *const Accelerator(N,P), xs: *const [N*P]f64, ms: *const [P]f64 ) f64 {
+            const self = @fieldParentPtr( Self, "accelerator", accelerator );
+            const halfStiffness = 0.5 * self.stiffness;
+
+            var totalPotentialEnergy = @as( f64, 0.0 );
+
+            var pA = @as( usize, 0 );
+            while ( pA < P ) : ( pA += 1 ) {
+                const xA = xs[ pA*N.. ][ 0..N ];
+
+                var pB = @as( usize, pA + 1 );
+                while ( pB < P ) : ( pB += 1 ) {
+                    const xB = xs[ pB*N.. ][ 0..N ];
+
+                    var d = @as( [N]f64, undefined );
+                    var dMagSquared = @as( f64, 0.0 );
+                    for ( xB ) |xB_n, n| {
+                        const d_n = xB_n - xA[n];
+                        d[n] = d_n;
+                        dMagSquared += d_n * d_n;
+                    }
+                    const dMag = sqrt( dMagSquared );
+                    const offsetFromRest = dMag - self.restLength;
+
+                    totalPotentialEnergy += halfStiffness * offsetFromRest*offsetFromRest;
+                }
+            }
+
+            return totalPotentialEnergy;
         }
     };
 }
@@ -126,7 +185,12 @@ pub fn main( ) !void {
     const N = 2;
     const P = 3;
 
-    var gravity = ConstantAcceleration(N,P).init( [N]f64 { 0.0, -9.80665 } );
+    const xLimits = [N]Interval {
+        Interval.initStartEnd( -8, 8 ),
+        Interval.initStartEnd( -6, 6 ),
+    };
+
+    var gravity = ConstantAcceleration(N,P).init( [N]f64 { 0.0, -9.80665 }, xLimits );
     var springs = SpringsAcceleration(N,P).init( 0.6, 300.0 );
     var accelerators = [_]*const Accelerator(N,P) {
         &gravity.accelerator,
@@ -136,10 +200,7 @@ pub fn main( ) !void {
     const simConfig = SimConfig(N,P) {
         .frameInterval_MILLIS = 15,
         .timestep = 500e-9,
-        .xLimits = [N]Interval {
-            Interval.initStartEnd( -8, 8 ),
-            Interval.initStartEnd( -6, 6 ),
-        },
+        .xLimits = xLimits,
         .particles = [P]Particle(N) {
             Particle(N).init( 1, [N]f64{ -6.0, -3.0 }, [N]f64{ 7.0, 13.0 } ),
             Particle(N).init( 1, [N]f64{ -6.5, -3.0 }, [N]f64{ 2.0, 14.0 } ),
