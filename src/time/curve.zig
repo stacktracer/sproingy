@@ -12,15 +12,19 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
 
         axes: [2]*const Axis,
 
-        rgb: [3]GLfloat,
+        rgbKinetic: [3]GLfloat,
+        rgbPotential: [3]GLfloat,
 
-        pendingCoordsMutex: Mutex,
-        pendingCoords: ArrayList(GLfloat),
-        vCoords: ArrayList(GLfloat),
+        hMutex: Mutex,
+        hCoords: ArrayList(GLfloat),
+        hIndices: ArrayList(GLuint),
+        hDirty: bool,
 
-        prog: CurveProgram,
-        vbo: GLuint,
         vao: GLuint,
+        prog: CurveProgram,
+        dCoords: GLuint,
+        dIndices: GLuint,
+        dCount: GLsizei,
 
         painter: Painter,
         simListener: SimListener(N,P) = SimListener(N,P) {
@@ -31,15 +35,19 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
             return Self {
                 .axes = axes,
 
-                .rgb = [3]GLfloat { 1.0, 1.0, 1.0 },
+                .rgbKinetic = [3]GLfloat { 1.0, 0.0, 0.0 },
+                .rgbPotential = [3]GLfloat { 1.0, 0.5, 0.0 },
 
-                .pendingCoordsMutex = Mutex {},
-                .pendingCoords = ArrayList(GLfloat).init( allocator ),
-                .vCoords = ArrayList(GLfloat).init( allocator ),
+                .hMutex = Mutex {},
+                .hCoords = ArrayList(GLfloat).init( allocator ),
+                .hIndices = ArrayList(GLuint).init( allocator ),
+                .hDirty = false,
 
-                .prog = undefined,
-                .vbo = 0,
                 .vao = 0,
+                .prog = undefined,
+                .dCoords = 0,
+                .dIndices = 0,
+                .dCount = 0,
 
                 .painter = Painter {
                     .name = name,
@@ -54,31 +62,51 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
         fn handleFrame( simListener: *SimListener(N,P), simFrame: *const SimFrame(N,P) ) !void {
             const self = @fieldParentPtr( Self, "simListener", simListener );
 
-            var totalKineticEnergy = @as( f64, 0.0 );
+            const t = @floatCast( GLfloat, simFrame.t );
+
+            var kineticEnergy = @as( f64, 0.0 );
             for ( simFrame.ms ) |m,p| {
                 var vSquared = @as( f64, 0.0 );
                 for ( simFrame.vs[ p*N.. ][ 0..N ] ) |v| {
                     vSquared += v*v;
                 }
-                totalKineticEnergy += 0.5 * m * vSquared;
+                kineticEnergy += 0.5 * m * vSquared;
             }
 
-            var totalPotentialEnergy = @as( f64, 0.0 );
+            var potentialEnergy = @as( f64, 0.0 );
             for ( simFrame.config.accelerators ) |accelerator| {
-                totalPotentialEnergy += accelerator.computePotentialEnergy( simFrame.xs, simFrame.ms );
+                potentialEnergy += accelerator.computePotentialEnergy( simFrame.xs, simFrame.ms );
             }
 
-            const totalEnergy = totalKineticEnergy + totalPotentialEnergy;
+            const totalEnergy = kineticEnergy + potentialEnergy;
 
             const newCoords = [_]GLfloat {
-                @floatCast( GLfloat, simFrame.t ),
-                @floatCast( GLfloat, totalEnergy ),
+                t, @as( GLfloat, 0 ), @as( GLfloat, 0 ),
+                t, @floatCast( GLfloat, potentialEnergy ), @as( GLfloat, 1 ),
+                t, @floatCast( GLfloat, totalEnergy ), @as( GLfloat, 2 ),
             };
 
             {
-                const held = self.pendingCoordsMutex.acquire( );
+                const held = self.hMutex.acquire( );
                 defer held.release( );
-                try self.pendingCoords.appendSlice( &newCoords );
+
+                try self.hCoords.appendSlice( &newCoords );
+
+                const hCount = @intCast( GLuint, @divTrunc( self.hCoords.items.len, 3 ) );
+                if ( hCount >= 6 ) {
+                    const C = hCount-4; const F = hCount-1;
+                    const B = hCount-5; const E = hCount-2;
+                    const A = hCount-6; const D = hCount-3;
+                    const newIndices = [_]GLuint {
+                        B, A, E,
+                        E, A, D,
+                        C, B, F,
+                        F, B, E,
+                    };
+                    try self.hIndices.appendSlice( &newIndices );
+                }
+
+                self.hDirty = true;
             }
         }
 
@@ -87,51 +115,49 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
 
             self.prog = try CurveProgram.glCreate( );
 
-            glGenBuffers( 1, &self.vbo );
-            glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
+            glGenBuffers( 1, &self.dCoords );
+            glGenBuffers( 1, &self.dIndices );
+            glBindBuffer( GL_ARRAY_BUFFER, self.dCoords );
+            glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, self.dIndices );
 
             glGenVertexArrays( 1, &self.vao );
             glBindVertexArray( self.vao );
             if ( self.prog.inCoords >= 0 ) {
                 const inCoords = @intCast( GLuint, self.prog.inCoords );
                 glEnableVertexAttribArray( inCoords );
-                glVertexAttribPointer( inCoords, 2, GL_FLOAT, GL_FALSE, 0, null );
+                glVertexAttribPointer( inCoords, 3, GL_FLOAT, GL_FALSE, 0, null );
             }
         }
 
         fn glPaint( painter: *Painter, pc: *const PainterContext ) !void {
             const self = @fieldParentPtr( Self, "painter", painter );
 
-            glBindBuffer( GL_ARRAY_BUFFER, self.vbo );
+            glBindBuffer( GL_ARRAY_BUFFER, self.dCoords );
+            glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, self.dIndices );
 
-            var vCoordsModified = false;
             {
-                const held = self.pendingCoordsMutex.acquire( );
+                const held = self.hMutex.acquire( );
                 defer held.release( );
-                if ( self.pendingCoords.items.len > 0 ) {
-                    try self.vCoords.appendSlice( self.pendingCoords.items );
-                    self.pendingCoords.items.len = 0;
-                    vCoordsModified = true;
+                if ( self.hDirty ) {
+                    glzBufferData( GL_ARRAY_BUFFER, GLfloat, self.hCoords.items, GL_STATIC_DRAW );
+                    glzBufferData( GL_ELEMENT_ARRAY_BUFFER, GLuint, self.hIndices.items, GL_STATIC_DRAW );
+                    self.dCount = @intCast( GLsizei, self.hIndices.items.len ); // FIXME: Overflow
+                    self.hDirty = false;
                 }
             }
-            if ( vCoordsModified ) {
-                glzBufferData( GL_ARRAY_BUFFER, GLfloat, self.vCoords.items, GL_STATIC_DRAW );
-            }
 
-            const vCount = @divTrunc( self.vCoords.items.len, 2 );
-            if ( vCount > 0 ) {
+            if ( self.dCount > 0 ) {
                 const bounds = axisBounds( 2, self.axes );
 
                 glzEnablePremultipliedAlphaBlending( );
 
                 glUseProgram( self.prog.program );
                 glzUniformInterval2( self.prog.XY_BOUNDS, bounds );
-                glUniform3fv( self.prog.RGB, 1, &self.rgb );
+                glUniform3fv( self.prog.RGB_Z0, 1, &self.rgbPotential );
+                glUniform3fv( self.prog.RGB_Z1, 1, &self.rgbKinetic );
 
                 glBindVertexArray( self.vao );
-                // FIXME: Draw simple lines
-                glPointSize( 4 );
-                glDrawArrays( GL_POINTS, 0, @intCast( c_int, vCount ) ); // FIXME: Overflow
+                glDrawElements( GL_TRIANGLES, self.dCount, GL_UNSIGNED_INT, null );
             }
         }
 
@@ -139,11 +165,17 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
             const self = @fieldParentPtr( Self, "painter", painter );
             glDeleteProgram( self.prog.program );
             glDeleteVertexArrays( 1, &self.vao );
-            glDeleteBuffers( 1, &self.vbo );
+            glDeleteBuffers( 1, &self.dCoords );
+            glDeleteBuffers( 1, &self.dIndices );
         }
 
         pub fn deinit( self: *Self ) void {
-            self.vCoords.deinit( );
+            {
+                const held = self.hMutex.acquire( );
+                defer held.release( );
+                self.hCoords.deinit( );
+                self.hIndices.deinit( );
+            }
         }
     };
 }
@@ -152,9 +184,10 @@ const CurveProgram = struct {
     program: GLuint,
 
     XY_BOUNDS: GLint,
-    RGB: GLint,
+    RGB_Z0: GLint,
+    RGB_Z1: GLint,
 
-    /// x_XAXIS, y_YAXIS
+    /// x_XAXIS, y_YAXIS, z
     inCoords: GLint,
 
     pub fn glCreate( ) !CurveProgram {
@@ -179,12 +212,15 @@ const CurveProgram = struct {
             \\
             \\uniform vec4 XY_BOUNDS;
             \\
-            \\// x_XAXIS, y_YAXIS
-            \\in vec2 inCoords;
+            \\// x_XAXIS, y_YAXIS, z
+            \\in vec3 inCoords;
+            \\
+            \\out float vZ; // FIXME: Try "flat" keyword
             \\
             \\void main( void ) {
             \\    vec2 xy_XYAXIS = inCoords.xy;
             \\    gl_Position = vec4( coordsToNdc2D( xy_XYAXIS, XY_BOUNDS ), 0.0, 1.0 );
+            \\    vZ = inCoords.z;
             \\}
         ;
 
@@ -192,13 +228,25 @@ const CurveProgram = struct {
             \\#version 150 core
             \\precision lowp float;
             \\
-            \\uniform vec3 RGB;
+            \\uniform vec3 RGB_Z0;
+            \\uniform vec3 RGB_Z1;
+            \\
+            \\in float vZ;
             \\
             \\out vec4 outRgba;
             \\
             \\void main( void ) {
-            \\    float alpha = 1.0;
-            \\    outRgba = vec4( alpha*RGB, alpha );
+            \\    switch ( int( vZ ) ) {
+            \\        case 0:
+            \\            outRgba = vec4( RGB_Z0, 1.0 );
+            \\            break;
+            \\        case 1:
+            \\            outRgba = vec4( RGB_Z1, 1.0 );
+            \\            break;
+            \\        default:
+            \\            discard;
+            \\            break;
+            \\    }
             \\}
         ;
 
@@ -206,7 +254,8 @@ const CurveProgram = struct {
         return CurveProgram {
             .program = program,
             .XY_BOUNDS = glGetUniformLocation( program, "XY_BOUNDS" ),
-            .RGB = glGetUniformLocation( program, "RGB" ),
+            .RGB_Z0 = glGetUniformLocation( program, "RGB_Z0" ),
+            .RGB_Z1 = glGetUniformLocation( program, "RGB_Z1" ),
             .inCoords = glGetAttribLocation( program, "inCoords" ),
         };
     }

@@ -37,16 +37,17 @@ pub fn TimeView( comptime N: usize, comptime P: usize ) type {
             gtk_widget_set_can_focus( self.glArea, 1 );
 
             self.axis0 = Axis.initBounds( -0.1, 60.0, 1 );
-            self.axis1 = Axis.initBounds( 0, 750, 1 );
+            self.axis1 = Axis.initBounds( 0, 400, 1 );
             var _axes = [2]*Axis { &self.axis0, &self.axis1 };
             var _axes0 = [1]*Axis { &self.axis0 };
             var _axes1 = [1]*Axis { &self.axis1 };
 
             self.bgPaintable = ClearPaintable.init( "TimeView.bgPaintable", GL_COLOR_BUFFER_BIT );
-            self.bgPaintable.rgba = [4]GLfloat { 0.0, 0.0, 0.0, 1.0 };
+            self.bgPaintable.rgba = [4]GLfloat { 0.4, 0.4, 0.4, 1.0 };
 
             self.curvePaintable = try CurvePaintable(N,P).init( "TimeView.curvePaintable", _axes, allocator );
-            self.curvePaintable.rgb = [3]GLfloat { 1.0, 1.0, 1.0 };
+            self.curvePaintable.rgbKinetic = [3]GLfloat { 0.0, 0.0, 0.0 };
+            self.curvePaintable.rgbPotential = [3]GLfloat { 1.0, 0.0, 0.0 };
 
             self.cursor = VerticalCursor.init( "TimeView.cursor", &self.axis0 );
             self.cursor.cursor = 30.0;
