@@ -48,6 +48,7 @@ pub fn TimeView( comptime N: usize, comptime P: usize ) type {
             self.curvePaintable = try CurvePaintable(N,P).init( "TimeView.curvePaintable", _axes, allocator );
             self.curvePaintable.rgbKinetic = [3]GLfloat { 0.0, 0.0, 0.0 };
             self.curvePaintable.rgbPotential = [3]GLfloat { 1.0, 0.0, 0.0 };
+            self.curvePaintable.rgbPotentialA = [3]GLfloat { 1.0, 1.0, 1.0 };
 
             self.cursor = VerticalCursor.init( "TimeView.cursor", &self.axis0 );
             self.cursor.cursor = 30.0;

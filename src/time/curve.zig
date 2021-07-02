@@ -14,6 +14,7 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
 
         rgbKinetic: [3]GLfloat,
         rgbPotential: [3]GLfloat,
+        rgbPotentialA: [3]GLfloat,
 
         hMutex: Mutex,
         hCoords: ArrayList(GLfloat),
@@ -35,8 +36,9 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
             return Self {
                 .axes = axes,
 
-                .rgbKinetic = [3]GLfloat { 1.0, 0.0, 0.0 },
-                .rgbPotential = [3]GLfloat { 1.0, 0.5, 0.0 },
+                .rgbKinetic = [3]GLfloat { 0.0, 0.0, 0.0 },
+                .rgbPotential = [3]GLfloat { 1.0, 0.0, 0.0 },
+                .rgbPotentialA = [3]GLfloat { 1.0, 1.0, 1.0 },
 
                 .hMutex = Mutex {},
                 .hCoords = ArrayList(GLfloat).init( allocator ),
@@ -65,7 +67,7 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
             const t = @floatCast( GLfloat, simFrame.t );
 
             var kineticEnergy = @as( f64, 0.0 );
-            for ( simFrame.ms ) |m,p| {
+            for ( simFrame.ms ) |m, p| {
                 var vSquared = @as( f64, 0.0 );
                 for ( simFrame.vs[ p*N.. ][ 0..N ] ) |v| {
                     vSquared += v*v;
@@ -73,17 +75,27 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
                 kineticEnergy += 0.5 * m * vSquared;
             }
 
-            var potentialEnergy = @as( f64, 0.0 );
-            for ( simFrame.config.accelerators ) |accelerator| {
-                potentialEnergy += accelerator.computePotentialEnergy( simFrame.xs, simFrame.ms );
+            // TODO: Find a less kludgy way to store and render all the potentials separately
+            var potentialEnergyA = @as( f64, 0.0 );
+            var potentialEnergyB = @as( f64, 0.0 );
+            for ( simFrame.config.accelerators ) |accelerator, i| {
+                const potentialEnergy = accelerator.computePotentialEnergy( simFrame.xs, simFrame.ms );
+                if ( i == 0 ) {
+                    potentialEnergyA += potentialEnergy;
+                }
+                else {
+                    potentialEnergyB += potentialEnergy;
+                }
             }
 
+            const potentialEnergy = potentialEnergyA + potentialEnergyB;
             const totalEnergy = kineticEnergy + potentialEnergy;
 
             const newCoords = [_]GLfloat {
-                t, @as( GLfloat, 0 ), @as( GLfloat, 0 ),
-                t, @floatCast( GLfloat, potentialEnergy ), @as( GLfloat, 1 ),
-                t, @floatCast( GLfloat, totalEnergy ), @as( GLfloat, 2 ),
+                t, @as( GLfloat, 0 ),                       @as( GLfloat, 0 ),
+                t, @floatCast( GLfloat, potentialEnergyA ), @as( GLfloat, 1 ),
+                t, @floatCast( GLfloat, potentialEnergy  ), @as( GLfloat, 2 ),
+                t, @floatCast( GLfloat, totalEnergy      ), @as( GLfloat, 3 ),
             };
 
             {
@@ -93,15 +105,18 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
                 try self.hCoords.appendSlice( &newCoords );
 
                 const hCount = @intCast( GLuint, @divTrunc( self.hCoords.items.len, 3 ) );
-                if ( hCount >= 6 ) {
-                    const C = hCount-4; const F = hCount-1;
-                    const B = hCount-5; const E = hCount-2;
-                    const A = hCount-6; const D = hCount-3;
+                if ( hCount >= 8 ) {
+                    const D = hCount-5; const H = hCount-1;
+                    const C = hCount-6; const G = hCount-2;
+                    const B = hCount-7; const F = hCount-3;
+                    const A = hCount-8; const E = hCount-4;
                     const newIndices = [_]GLuint {
-                        B, A, E,
-                        E, A, D,
-                        C, B, F,
-                        F, B, E,
+                        D, C, H,
+                        H, C, G,
+                        C, B, G,
+                        G, B, F,
+                        B, A, F,
+                        F, A, E,
                     };
                     try self.hIndices.appendSlice( &newIndices );
                 }
@@ -153,8 +168,9 @@ pub fn CurvePaintable( comptime N: usize, comptime P: usize ) type {
 
                 glUseProgram( self.prog.program );
                 glzUniformInterval2( self.prog.XY_BOUNDS, bounds );
-                glUniform3fv( self.prog.RGB_Z0, 1, &self.rgbPotential );
-                glUniform3fv( self.prog.RGB_Z1, 1, &self.rgbKinetic );
+                glUniform3fv( self.prog.RGB_Z0, 1, &self.rgbPotentialA );
+                glUniform3fv( self.prog.RGB_Z1, 1, &self.rgbPotential );
+                glUniform3fv( self.prog.RGB_Z2, 1, &self.rgbKinetic );
 
                 glBindVertexArray( self.vao );
                 glDrawElements( GL_TRIANGLES, self.dCount, GL_UNSIGNED_INT, null );
@@ -186,6 +202,7 @@ const CurveProgram = struct {
     XY_BOUNDS: GLint,
     RGB_Z0: GLint,
     RGB_Z1: GLint,
+    RGB_Z2: GLint,
 
     /// x_XAXIS, y_YAXIS, z
     inCoords: GLint,
@@ -230,6 +247,7 @@ const CurveProgram = struct {
             \\
             \\uniform vec3 RGB_Z0;
             \\uniform vec3 RGB_Z1;
+            \\uniform vec3 RGB_Z2;
             \\
             \\in float vZ;
             \\
@@ -242,6 +260,9 @@ const CurveProgram = struct {
             \\            break;
             \\        case 1:
             \\            outRgba = vec4( RGB_Z1, 1.0 );
+            \\            break;
+            \\        case 2:
+            \\            outRgba = vec4( RGB_Z2, 1.0 );
             \\            break;
             \\        default:
             \\            discard;
@@ -256,6 +277,7 @@ const CurveProgram = struct {
             .XY_BOUNDS = glGetUniformLocation( program, "XY_BOUNDS" ),
             .RGB_Z0 = glGetUniformLocation( program, "RGB_Z0" ),
             .RGB_Z1 = glGetUniformLocation( program, "RGB_Z1" ),
+            .RGB_Z2 = glGetUniformLocation( program, "RGB_Z2" ),
             .inCoords = glGetAttribLocation( program, "inCoords" ),
         };
     }
